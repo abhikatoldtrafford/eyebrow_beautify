@@ -1,7 +1,16 @@
 # Model Training & Weights (Large Files - 819MB+)
-eyebrow_training/
+# Exclude training directory but allow essential model weights
+eyebrow_training/*
+!eyebrow_training/eyebrow_recommended/
+eyebrow_training/eyebrow_recommended/*
+!eyebrow_training/eyebrow_recommended/weights/
+eyebrow_training/eyebrow_recommended/weights/*
+!eyebrow_training/eyebrow_recommended/weights/best.pt
+
+# Exclude large training data
 eyebrow.v2i.yolov11.zip
-*.pt
+
+# Exclude other model formats
 *.pth
 *.onnx
 *.weights
