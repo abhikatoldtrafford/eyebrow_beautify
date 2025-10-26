@@ -1,0 +1,118 @@
+# Model Training & Weights (Large Files - 819MB+)
+eyebrow_training/
+eyebrow.v2i.yolov11.zip
+*.pt
+*.pth
+*.onnx
+*.weights
+
+# Planning & Internal Docs (Not needed in repo)
+ui_enhancement_guide.md
+*.backup.py
+*_backup.py
+
+# Python Cache & Compiled Files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Test Outputs & Results
+tests/output/
+tests/test_images/
+*.pytest_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+pytest_debug.log
+
+# API Logs & Runtime Files
+*.log
+*.pid
+api.log
+api_server.log
+api_server.pid
+
+# Virtual Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Temporary & Cache Files
+*.tmp
+*.temp
+*.cache
+.cache/
+tmp/
+temp/
+
+# Image Outputs (Generated at Runtime)
+annotated/
+orig/
+output/
+results/
+generated/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Model Checkpoints (If Any)
+checkpoints/
+saved_models/
+models/weights/
+
+# OS Files
+Thumbs.db
+desktop.ini
+
+# Claude Code
+.claude/
+
+# Data Files (Large Datasets)
+data/train/
+data/test/
+data/val/
+*.dataset/

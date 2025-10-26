@@ -1,0 +1,20 @@
+# FastAPI and server dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6  # For file uploads
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Image processing (already installed for core modules)
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# Core dependencies (already installed)
+ultralytics>=8.0.0
+mediapipe>=0.10.0
+scipy>=1.11.0
+
+# Optional: for CORS, authentication, etc.
+python-jose[cryptography]==3.3.0  # For JWT tokens (if needed)
+passlib[bcrypt]==1.7.4  # For password hashing (if needed)
