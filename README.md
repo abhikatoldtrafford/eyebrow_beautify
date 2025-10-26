@@ -36,23 +36,70 @@ A complete end-to-end eyebrow detection, beautification, and editing system that
 
 ### 1. Installation
 
-```bash
-# Navigate to project directory
-cd /mnt/g/eyebrow
+#### Clone Repository
 
-# Install all dependencies
+```bash
+# Clone the repository (Git LFS will download model weights automatically)
+git clone https://github.com/abhikatoldtrafford/eyebrow_beautify.git
+cd eyebrow_beautify
+
+# Note: Model weights (best.pt, 59MB) are stored with Git LFS
+# If you don't have Git LFS installed, install it first:
+# Ubuntu/Debian: apt-get install git-lfs
+# macOS: brew install git-lfs
+# Then run: git lfs pull
+```
+
+#### Install Dependencies
+
+**Option A: Using pip (Recommended)**
+
+```bash
+# Install all required packages
 pip install ultralytics opencv-python numpy scipy mediapipe fastapi uvicorn streamlit pillow requests
 
-# Verify YOLO model exists (required)
+# Or install from requirements file (if available)
+pip install -r api/requirements.txt
+```
+
+**Option B: Using virtual environment (Best Practice)**
+
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+# Linux/macOS:
+source venv/bin/activate
+# Windows:
+venv\Scripts\activate
+
+# Install dependencies
+pip install ultralytics opencv-python numpy scipy mediapipe fastapi uvicorn streamlit pillow requests
+```
+
+#### Verify Installation
+
+```bash
+# Verify YOLO model weights exist
 ls eyebrow_training/eyebrow_recommended/weights/best.pt
 
-# Make startup script executable (if needed)
+# Expected output:
+# eyebrow_training/eyebrow_recommended/weights/best.pt  ← Should see this file (59MB)
+
+# If model file is missing, pull from Git LFS:
+git lfs pull
+
+# Make startup script executable
 chmod +x start_api.sh
+
+# Quick test
+python -c "import cv2, mediapipe, ultralytics; print('✓ All imports successful')"
 ```
 
 **Expected output:**
 ```
-eyebrow_training/eyebrow_recommended/weights/best.pt  ← Should see this file
+✓ All imports successful
 ```
 
 ---
@@ -496,7 +543,112 @@ Total: ~12,423 lines of Python code (+1,839 from v4.0)
 
 ---
 
-## 🔧 API Endpoints (15 Total)
+## 🔧 API Reference
+
+### API Documentation
+
+**Interactive API Docs (Swagger UI):** http://localhost:8000/docs
+
+The Swagger UI provides:
+- Complete API reference with request/response schemas
+- Interactive "Try it out" buttons to test endpoints
+- Example requests and responses
+- Model schemas and validation rules
+
+**Alternative API Docs (ReDoc):** http://localhost:8000/redoc
+
+**Base URL:** `http://localhost:8000`
+
+**Authentication:** None (add as needed for production)
+
+**Content-Type:** `application/json` for all endpoints
+
+### Quick API Examples
+
+**Example 1: Health Check**
+```bash
+curl http://localhost:8000/health
+
+# Response:
+# {
+#   "status": "healthy",
+#   "model_loaded": true,
+#   "mediapipe_available": true,
+#   "version": "5.0"
+# }
+```
+
+**Example 2: Beautify with Base64**
+```python
+import requests
+import base64
+
+# Read and encode image
+with open('face.jpg', 'rb') as f:
+    img_b64 = base64.b64encode(f.read()).decode()
+
+# Call beautify endpoint
+response = requests.post('http://localhost:8000/beautify/base64', json={
+    'image_base64': img_b64,
+    'return_masks': True
+})
+
+result = response.json()
+
+# Extract masks
+for eyebrow in result['eyebrows']:
+    side = eyebrow['side']
+    mask_b64 = eyebrow['final_mask_base64']
+    coverage = eyebrow['validation']['mp_coverage']
+
+    print(f"{side}: {coverage:.1f}% coverage")
+
+    # Decode mask
+    mask_data = base64.b64decode(mask_b64)
+    with open(f'{side}_mask.png', 'wb') as f:
+        f.write(mask_data)
+```
+
+**Example 3: Face Preprocessing**
+```bash
+# Check if face is valid before beautification
+curl -X POST http://localhost:8000/preprocess \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_base64": "...",
+    "config": {
+      "min_rotation_threshold": 1.0,
+      "max_rotation_angle": 30.0
+    }
+  }'
+
+# Response includes:
+# - Face validation results
+# - Rotation angle detected
+# - Asymmetry analysis
+# - Whether face should be accepted/rejected
+```
+
+**Example 4: Adjust Eyebrow**
+```python
+import requests
+
+# Adjust thickness
+response = requests.post('http://localhost:8000/adjust/thickness/increase', json={
+    'mask_base64': 'iVBORw0KGgo...',  # Your mask in base64
+    'side': 'left',
+    'increment': 0.05,  # 5% increase
+    'num_clicks': 2      # Apply twice (10% total)
+})
+
+result = response.json()
+print(f"Area changed: {result['total_change_pct']:.1f}%")
+
+# Get adjusted mask
+adjusted_mask_b64 = result['adjusted_mask_base64']
+```
+
+### Complete Endpoint Reference (15 Total)
 
 ### Health & Configuration
 
@@ -630,98 +782,452 @@ Step 5: Download Results
 
 ## 📖 Usage Examples
 
-### Example 1: Streamlit Web App (Recommended)
+### Example 1: Streamlit Web App (Recommended for Non-Developers)
+
+The easiest way to use the system with a graphical interface.
 
 ```bash
-# Start API + Streamlit
+# Step 1: Start API server (Terminal 1)
 ./start_api.sh
-streamlit run streamlit_app.py
+# Wait for: "Uvicorn running on http://0.0.0.0:8000"
 
-# 1. Open http://localhost:8501
-# 2. Upload image
-# 3. View detection results
-# 4. Edit eyebrows (auto or manual mode)
-# 5. Download results
+# Step 2: Start Streamlit (Terminal 2)
+streamlit run streamlit_app.py
+# Wait for: "You can now view your Streamlit app in your browser"
+
+# Step 3: Open browser
+# → http://localhost:8501
+
+# Step 4: Use the web interface
+# 1. Upload image
+# 2. View detection results (before/after comparison)
+# 3. Edit eyebrows:
+#    - Auto mode: Use +/− buttons for thickness & span
+#    - Manual mode: Rotate, scale, translate with sliders
+# 4. Finalize masks
+# 5. Download results (masks, annotated image, comparison)
 ```
 
-### Example 2: Python API Client
+**Developer Tools:** Click "Developer Corner" in Streamlit to access:
+- **API Tester**: Test all 15 endpoints interactively
+- **Preprocessing Analyzer**: Validate face quality, rotation detection
+- **Test Runner**: Run test suites from UI
+- **Visualizer**: Step-by-step pipeline debugging
+- **Log Viewer**: Real-time API log monitoring
+- **Config Playground**: Tune 20+ parameters with A/B testing
+
+---
+
+### Example 2: Python API Client (Recommended for Developers)
+
+Integrate eyebrow beautification into your Python application.
 
 ```python
 import requests
 import base64
+import cv2
+import numpy as np
 
 API_URL = "http://localhost:8000"
 
-# Read image and encode
-with open('image.jpg', 'rb') as f:
-    img_base64 = base64.b64encode(f.read()).decode()
+# ===== 1. HEALTH CHECK =====
+health = requests.get(f"{API_URL}/health").json()
+print(f"API Status: {health['status']}")
+print(f"Model Loaded: {health['model_loaded']}")
 
-# Beautify eyebrows
-response = requests.post(f"{API_URL}/beautify/base64", json={
+# ===== 2. LOAD & ENCODE IMAGE =====
+with open('face_photo.jpg', 'rb') as f:
+    img_base64 = base64.b64encode(f.read()).decode('utf-8')
+
+# ===== 3. PREPROCESS FACE (Optional - Check validity) =====
+preprocess_response = requests.post(f"{API_URL}/preprocess", json={
     'image_base64': img_base64,
-    'return_masks': True
-})
+    'config': {
+        'min_rotation_threshold': 1.0,
+        'max_rotation_angle': 30.0,
+        'reject_invalid_faces': True
+    }
+}).json()
 
-result = response.json()
-print(f"Processed {len(result['eyebrows'])} eyebrows")
+if not preprocess_response.get('valid', False):
+    print(f"Face rejected: {preprocess_response['rejection_reason']}")
+    exit()
 
-for eyebrow in result['eyebrows']:
-    print(f"\n{eyebrow['side'].upper()} Eyebrow:")
-    print(f"  MP Coverage: {eyebrow['validation']['mp_coverage']:.1f}%")
-    print(f"  Overall Pass: {eyebrow['validation']['overall_pass']}")
+print(f"Face valid! Rotation: {preprocess_response['rotation_angle']:.2f}°")
 
-# Adjust thickness
-left_mask_b64 = result['eyebrows'][0]['final_mask_base64']
+# ===== 4. BEAUTIFY EYEBROWS =====
+beautify_response = requests.post(f"{API_URL}/beautify/base64", json={
+    'image_base64': img_base64,
+    'return_masks': True,
+    'config': {
+        'enable_preprocessing': True,
+        'yolo_conf_threshold': 0.25,
+        'min_mp_coverage': 80.0
+    }
+}).json()
+
+if not beautify_response.get('success'):
+    print("Beautification failed!")
+    exit()
+
+print(f"\nProcessed {len(beautify_response['eyebrows'])} eyebrows")
+print(f"Processing time: {beautify_response['processing_time_ms']:.1f}ms")
+
+# ===== 5. EXTRACT & SAVE MASKS =====
+for eyebrow in beautify_response['eyebrows']:
+    side = eyebrow['side']
+    validation = eyebrow['validation']
+
+    print(f"\n{side.upper()} Eyebrow:")
+    print(f"  MediaPipe Coverage: {validation['mp_coverage']:.1f}%")
+    print(f"  Validation Passed: {validation['overall_pass']}")
+    print(f"  Eye Distance: {validation['eye_distance_pct']:.1f}%")
+    print(f"  Aspect Ratio: {validation['aspect_ratio']:.2f}")
+
+    # Decode and save mask
+    mask_data = base64.b64decode(eyebrow['final_mask_base64'])
+    with open(f'{side}_eyebrow_mask.png', 'wb') as f:
+        f.write(mask_data)
+    print(f"  Saved: {side}_eyebrow_mask.png")
+
+# ===== 6. ADJUST EYEBROWS =====
+# Make left eyebrow thicker (+10%)
+left_mask_b64 = beautify_response['eyebrows'][0]['final_mask_base64']
 
 adjust_response = requests.post(f"{API_URL}/adjust/thickness/increase", json={
     'mask_base64': left_mask_b64,
     'side': 'left',
-    'increment': 0.05,  # 5%
-    'num_clicks': 1
-})
+    'increment': 0.05,  # 5% per click
+    'num_clicks': 2      # Click twice = 10% total
+}).json()
 
-adjusted = adjust_response.json()
-print(f"\nArea changed by: {adjusted['area_change_pct']:.1f}%")
+print(f"\nAdjusted left eyebrow:")
+print(f"  Original area: {adjust_response['original_area']:,} px")
+print(f"  Adjusted area: {adjust_response['adjusted_area']:,} px")
+print(f"  Change: {adjust_response['total_change_pct']:+.1f}%")
+
+# Save adjusted mask
+adjusted_mask_data = base64.b64decode(adjust_response['adjusted_mask_base64'])
+with open('left_eyebrow_adjusted.png', 'wb') as f:
+    f.write(adjusted_mask_data)
+print("  Saved: left_eyebrow_adjusted.png")
+
+# ===== 7. FINALIZE & SUBMIT EDITS =====
+finalize_response = requests.post(f"{API_URL}/beautify/submit-edit", json={
+    'image_base64': img_base64,
+    'edited_mask_base64': adjust_response['adjusted_mask_base64'],
+    'side': 'left',
+    'metadata': {
+        'adjustment': 'thickness +10%',
+        'timestamp': '2025-10-26'
+    }
+}).json()
+
+print(f"\nFinalized: {finalize_response['success']}")
+print(f"Final mask area: {finalize_response['mask_area']:,} px")
 ```
 
-### Example 3: Direct Python (No API)
+**Output Example:**
+```
+API Status: healthy
+Model Loaded: True
+Face valid! Rotation: 2.34°
+
+Processed 2 eyebrows
+Processing time: 287.3ms
+
+LEFT Eyebrow:
+  MediaPipe Coverage: 89.2%
+  Validation Passed: True
+  Eye Distance: 5.4%
+  Aspect Ratio: 6.83
+  Saved: left_eyebrow_mask.png
+
+RIGHT Eyebrow:
+  MediaPipe Coverage: 91.5%
+  Validation Passed: True
+  Eye Distance: 5.6%
+  Aspect Ratio: 7.12
+  Saved: right_eyebrow_mask.png
+
+Adjusted left eyebrow:
+  Original area: 10,523 px
+  Adjusted area: 11,575 px
+  Change: +10.0%
+  Saved: left_eyebrow_adjusted.png
+
+Finalized: True
+Final mask area: 11,575 px
+```
+
+---
+
+### Example 3: JavaScript/TypeScript Integration
+
+Use the API from web applications.
+
+```javascript
+// Fetch API example
+async function beautifyEyebrows(imageFile) {
+  const apiUrl = 'http://localhost:8000';
+
+  // 1. Convert image to base64
+  const base64 = await fileToBase64(imageFile);
+
+  // 2. Call beautify endpoint
+  const response = await fetch(`${apiUrl}/beautify/base64`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      image_base64: base64,
+      return_masks: true,
+    }),
+  });
+
+  const result = await response.json();
+
+  // 3. Process results
+  if (result.success) {
+    console.log(`Processed ${result.eyebrows.length} eyebrows`);
+
+    result.eyebrows.forEach(eyebrow => {
+      console.log(`${eyebrow.side}: ${eyebrow.validation.mp_coverage.toFixed(1)}% coverage`);
+
+      // Convert base64 mask to blob for display/download
+      const maskBlob = base64ToBlob(eyebrow.final_mask_base64, 'image/png');
+      const maskUrl = URL.createObjectURL(maskBlob);
+
+      // Display mask in img element
+      document.getElementById(`${eyebrow.side}-mask`).src = maskUrl;
+    });
+  }
+}
+
+// Helper: Convert file to base64
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1]; // Remove data:image/...;base64,
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Helper: Convert base64 to blob
+function base64ToBlob(base64, mimeType) {
+  const byteCharacters = atob(base64);
+  const byteArrays = [];
+
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteArrays.push(byteCharacters.charCodeAt(i));
+  }
+
+  return new Blob([new Uint8Array(byteArrays)], { type: mimeType });
+}
+
+// Usage in React/Vue/Angular:
+// <input type="file" onChange={(e) => beautifyEyebrows(e.target.files[0])} />
+```
+
+---
+
+### Example 4: Direct Python (No API Server)
+
+Use the core library directly without running the API server.
 
 ```python
+import cv2
 import yolo_pred
 import beautify
+import utils
+from visualize import create_6panel_visualization
 
-# Load model
+# ===== 1. LOAD MODEL =====
+print("Loading YOLO model...")
 model = yolo_pred.load_yolo_model()
+print("Model loaded!")
 
-# Run beautification
-results = beautify.beautify_eyebrows('image.jpg', model)
+# ===== 2. RUN BEAUTIFICATION =====
+image_path = 'test_images/face_001.jpg'
+print(f"\nProcessing: {image_path}")
 
-# Process results
+results = beautify.beautify_eyebrows(
+    image_path=image_path,
+    model=model,
+    config={
+        'enable_preprocessing': True,
+        'yolo_conf_threshold': 0.25,
+        'min_mp_coverage': 80.0,
+        'auto_correct_rotation': True
+    }
+)
+
+# ===== 3. PROCESS RESULTS =====
+print(f"\nFound {len(results)} eyebrows")
+
 for result in results:
     side = result['side']
     final_mask = result['masks']['final_beautified']
     validation = result['validation']
+    metadata = result['metadata']
 
-    print(f"{side} eyebrow:")
-    print(f"  Validation passed: {validation['overall_pass']}")
-    print(f"  MediaPipe coverage: {validation['mp_coverage']:.1f}%")
+    print(f"\n{side.upper()} Eyebrow:")
+    print(f"  Validation: {'✓ Passed' if validation['overall_pass'] else '✗ Failed'}")
+    print(f"  MediaPipe Coverage: {validation['mp_coverage']:.1f}%")
+    print(f"  YOLO Confidence: {metadata['yolo_confidence']:.2f}")
+    print(f"  Final Area: {metadata['final_area']:,} px")
 
-    # Adjust thickness
-    import utils
+    # Save mask
+    cv2.imwrite(f'{side}_mask.png', final_mask * 255)
+
+    # ===== 4. ADJUST EYEBROW =====
+    # Make thicker (+5%)
     thicker_mask = utils.adjust_eyebrow_thickness(final_mask, factor=1.05)
+    cv2.imwrite(f'{side}_thicker.png', thicker_mask * 255)
+
+    # Make longer (+5%, directional tail extension)
+    longer_mask = utils.adjust_eyebrow_span(thicker_mask, factor=1.05, side=side, directional=True)
+    cv2.imwrite(f'{side}_adjusted.png', longer_mask * 255)
+
+    print(f"  Saved: {side}_mask.png, {side}_thicker.png, {side}_adjusted.png")
+
+# ===== 5. CREATE VISUALIZATION =====
+print("\nCreating 6-panel visualization...")
+viz = create_6panel_visualization(image_path, results, model)
+cv2.imwrite('visualization.png', viz)
+print("Saved: visualization.png")
 ```
 
-### Example 4: CLI (Quick Test)
+---
+
+### Example 5: CLI (Quick Test)
+
+For quick testing without code.
 
 ```bash
-# Basic detection
-python predict.py --image image.jpg
+# Basic YOLO detection only
+python predict.py --image test_images/face.jpg
 
-# With MediaPipe landmarks
-python predict.py --image image.jpg --mediapipe
+# With MediaPipe landmarks overlay
+python predict.py --image test_images/face.jpg --mediapipe
 
 # Output saved to predictions/ directory
+# Note: CLI doesn't run full 8-phase pipeline
+# Use API or Python script for complete beautification
 ```
+
+---
+
+### Example 6: Batch Processing
+
+Process multiple images programmatically.
+
+```python
+import os
+import glob
+import requests
+import base64
+from pathlib import Path
+
+API_URL = "http://localhost:8000"
+
+# Get all images
+image_dir = Path('input_images')
+output_dir = Path('output_masks')
+output_dir.mkdir(exist_ok=True)
+
+image_files = glob.glob(str(image_dir / '*.jpg')) + glob.glob(str(image_dir / '*.png'))
+
+print(f"Processing {len(image_files)} images...")
+
+results_summary = []
+
+for img_path in image_files:
+    print(f"\nProcessing: {img_path}")
+
+    # Encode image
+    with open(img_path, 'rb') as f:
+        img_b64 = base64.b64encode(f.read()).decode()
+
+    # Beautify
+    response = requests.post(f"{API_URL}/beautify/base64", json={
+        'image_base64': img_b64,
+        'return_masks': True
+    }).json()
+
+    if response.get('success'):
+        filename = Path(img_path).stem
+
+        for eyebrow in response['eyebrows']:
+            side = eyebrow['side']
+            mask_b64 = eyebrow['final_mask_base64']
+            coverage = eyebrow['validation']['mp_coverage']
+
+            # Save mask
+            mask_data = base64.b64decode(mask_b64)
+            mask_path = output_dir / f'{filename}_{side}.png'
+            with open(mask_path, 'wb') as f:
+                f.write(mask_data)
+
+            results_summary.append({
+                'image': filename,
+                'side': side,
+                'coverage': coverage,
+                'passed': eyebrow['validation']['overall_pass']
+            })
+
+            print(f"  {side}: {coverage:.1f}% coverage → {mask_path}")
+    else:
+        print(f"  Failed: {response.get('message', 'Unknown error')}")
+
+# Print summary
+print(f"\n{'='*60}")
+print("BATCH PROCESSING SUMMARY")
+print(f"{'='*60}")
+print(f"Total images: {len(image_files)}")
+print(f"Total eyebrows processed: {len(results_summary)}")
+
+avg_coverage = sum(r['coverage'] for r in results_summary) / len(results_summary)
+pass_rate = sum(1 for r in results_summary if r['passed']) / len(results_summary) * 100
+
+print(f"Average MediaPipe coverage: {avg_coverage:.1f}%")
+print(f"Validation pass rate: {pass_rate:.1f}%")
+print(f"Output directory: {output_dir}")
+```
+
+---
+
+## 📚 Additional Documentation
+
+For more detailed information, see:
+
+- **[CLAUDE.md](CLAUDE.md)** - Complete system reference (35KB, 1,000+ lines)
+  - Algorithm deep dive (8-phase pipeline explained)
+  - Architecture diagrams
+  - Configuration parameters (20+ tunable settings)
+  - Performance characteristics
+  - Troubleshooting guide
+
+- **[api/README.md](api/README.md)** - API-specific documentation
+  - Endpoint schemas
+  - Request/response examples
+  - Error handling
+  - Rate limiting (when implemented)
+
+- **Interactive API Docs** - http://localhost:8000/docs (when server running)
+  - Swagger UI with "Try it out" buttons
+  - Real-time testing
+  - Schema visualization
+
+- **Test Reports** - `tests/output/reports/test_report.md` (after running tests)
+  - Test results summary
+  - Coverage statistics
+  - Performance benchmarks
 
 ---
 
