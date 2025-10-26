@@ -31,6 +31,38 @@ SPAN_INCREMENT = 0.05       # 5% per click
 ROTATION_RANGE = (-45, 45)    # degrees
 SCALE_RANGE = (0.5, 1.5)      # 50% to 150%
 
+# Brush/Eraser Configuration
+BRUSH_CONFIG = {
+    'default_brush_size': 10,
+    'min_brush_size': 1,
+    'max_brush_size': 50,
+    'default_opacity': 0.6,
+    'brush_color': "#FF0000",  # Red
+    'eraser_color': "#FFFFFF",  # White
+}
+
+# Zoom Configuration
+ZOOM_CONFIG = {
+    'min_zoom': 0.5,
+    'max_zoom': 4.0,
+    'zoom_step': 0.1,
+    'default_zoom': 1.0,
+}
+
+# Undo/Redo Configuration
+UNDO_CONFIG = {
+    'max_history': 50,
+    'enable_redo': True,
+}
+
+# Mobile Configuration
+MOBILE_CONFIG = {
+    'phone_breakpoint': 768,     # px - viewport width for phone/tablet
+    'tablet_breakpoint': 1024,   # px - viewport width for tablet/desktop
+    'touch_debounce': 500,       # ms - debounce for touch events
+    'min_touch_target': 44,      # px - minimum touch target size
+}
+
 # API default thresholds (should match beautify.py DEFAULT_CONFIG)
 API_DETECTION_DEFAULTS = {
     'yolo_conf_threshold': 0.25,
@@ -52,6 +84,7 @@ MIN_IMAGE_SIZE = (200, 200)     # Min width, height
 
 # Session state keys
 SESSION_KEYS = {
+    # Existing keys
     'initialized': False,
     'original_image': None,
     'original_image_b64': None,
@@ -64,6 +97,40 @@ SESSION_KEYS = {
     'finalized': False,
     'sd_result': None,
     'api_healthy': False,
+
+    # Brush/eraser mode
+    'brush_tool': '🖌️ Brush',
+    'brush_size': BRUSH_CONFIG['default_brush_size'],
+    'brush_opacity': BRUSH_CONFIG['default_opacity'],
+    'canvas_data': None,
+
+    # Auto adjust mode
+    'last_thickness': {'left': 0, 'right': 0},
+    'last_span': {'left': 0, 'right': 0},
+    'thickness_left': 0,
+    'thickness_right': 0,
+    'span_left': 0,
+    'span_right': 0,
+    'adjustment_cache': {},  # LRU cache for API results
+
+    # Zoom/pan
+    'zoom_level': ZOOM_CONFIG['default_zoom'],
+    'pan_offset': (0, 0),
+
+    # Undo/redo
+    'undo_stack': [],
+    'redo_stack': [],
+    'max_undo': UNDO_CONFIG['max_history'],
+
+    # UI state
+    'edit_tab': 'Auto Adjust',
+    'preview_mode': 'Overlay',
+    'preview_opacity': DEFAULT_OPACITY,
+
+    # Mobile
+    'is_mobile': False,
+    'touch_start': None,
+    'last_api_call': 0,  # Timestamp for debouncing
 }
 
 # UI Messages

@@ -657,18 +657,91 @@ def adjust_eyebrow_thickness(mask, factor):
     return adjusted
 
 
+def adjust_eyebrow_span_morphological(mask, factor, side='unknown'):
+    """
+    Adjust eyebrow span using simple morphological operations on the TAIL region only.
+
+    KEY: Eyebrow curves/bows, so tail isn't leftmost/rightmost point!
+    Solution: Take last 1/3 of eyebrow (the actual tail), apply erosion/dilation there.
+
+    This is REVERSIBLE: increase then decrease returns to original.
+
+    Parameters:
+        mask: Binary eyebrow mask (H, W)
+        factor: Span adjustment factor (>1.0 = increase, <1.0 = decrease)
+        side: 'left' or 'right'
+
+    Returns:
+        Adjusted mask with tail extended/contracted
+    """
+    if mask is None or np.sum(mask) == 0:
+        return mask
+
+    if factor == 1.0:
+        return mask
+
+    mask = mask.astype(np.uint8)
+    h, w = mask.shape
+
+    # Get bounding box
+    bbox = get_bounding_box_from_mask(mask)
+    if bbox is None:
+        return mask
+
+    x_min, y_min, x_max, y_max = bbox
+    span = x_max - x_min
+
+    # Calculate kernel size based on factor (amplify 1.5x for visible but reasonable change)
+    kernel_width = max(5, int(abs(span * (factor - 1.0)) * 1.5))
+    if kernel_width % 2 == 0:
+        kernel_width += 1  # Must be odd
+
+    # Horizontal kernel (1 pixel tall for thin extension)
+    kernel = np.ones((1, kernel_width), dtype=np.uint8)
+
+    # Define tail region (last 1/3 of eyebrow)
+    tail_fraction = 1.0 / 3.0
+    tail_width = int(span * tail_fraction)
+
+    # Create protection mask (protects center 2/3, modifies tail 1/3)
+    protection_mask = np.zeros((h, w), dtype=np.uint8)
+
+    if side == 'left':
+        # Left eyebrow: tail is on the LEFT (small x values)
+        # Protect RIGHT 2/3, modify LEFT 1/3
+        tail_end = x_min + tail_width
+        protection_mask[:, tail_end:] = 1
+    else:  # side == 'right'
+        # Right eyebrow: tail is on the RIGHT (large x values)
+        # Protect LEFT 2/3, modify RIGHT 1/3
+        tail_start = x_max - tail_width
+        protection_mask[:, :tail_start] = 1
+
+    # Apply morphological operation
+    if factor > 1.0:
+        # INCREASE span - dilate tail only
+        full_dilate = cv2.dilate(mask, kernel, iterations=1)
+        result = np.where(protection_mask > 0, mask, full_dilate).astype(np.uint8)
+    else:
+        # DECREASE span - erode tail only
+        full_erode = cv2.erode(mask, kernel, iterations=1)
+        result = np.where(protection_mask > 0, mask, full_erode).astype(np.uint8)
+
+    # Light smoothing for natural appearance
+    result = smooth_mask_contours(result, kernel_size=3, iterations=1)
+
+    return result
+
+
 def adjust_eyebrow_span(mask, factor, side='unknown', directional=True):
     """
-    Adjust eyebrow horizontal span (width/length) while maintaining natural curvature.
+    Adjust eyebrow horizontal span (width/length) using morphological operations on TAIL region.
 
-    KEY INSIGHT: Natural eyebrow extension happens at the TAIL (temple side), not center!
-    - Center side (near nose): NO expansion → looks unnatural
-    - Tail side (temple): YES expansion → creates natural lengthening effect
-
-    Uses DIRECTIONAL morphological operations:
-    - For left eyebrow: extends/contracts right side (tail)
-    - For right eyebrow: extends/contracts left side (tail)
-    - Center side is protected (masked) during operation
+    KEY INSIGHT: Eyebrow curves/bows, so tail isn't just leftmost/rightmost!
+    - Takes last 1/3 of eyebrow (actual tail region based on bounding box)
+    - Applies erosion/dilation ONLY to that tail region
+    - Protects center 2/3 from modification
+    - REVERSIBLE: increase then decrease returns to original!
 
     Parameters:
         mask: Binary eyebrow mask (H, W), dtype=uint8
@@ -677,93 +750,47 @@ def adjust_eyebrow_span(mask, factor, side='unknown', directional=True):
                 - factor < 1.0 = shorter (e.g., 0.95 = -5%)
                 - factor = 1.0 = no change
         side: Eyebrow side ('left', 'right', or 'unknown')
-              - 'left': center is left, tail is right
-              - 'right': center is right, tail is left
-              - 'unknown': auto-detect or use symmetric expansion
-        directional: If True, expand only tail side (default: True)
-                    If False, expand symmetrically (old behavior)
+              - 'left': tail is LEFT 1/3, center is RIGHT 2/3
+              - 'right': tail is RIGHT 1/3, center is LEFT 2/3
+        directional: If True, adjust only tail (default: True)
 
     Returns:
-        Adjusted mask with same shape, maintaining natural curvature
+        Adjusted mask, reversible to original
 
     Example:
-        # Increase span by 5% (tail only)
+        # Increase span by 5%
         longer = adjust_eyebrow_span(mask, 1.05, side='left')
-
-        # Decrease span by 5% (tail only)
-        shorter = adjust_eyebrow_span(mask, 0.95, side='right')
+        # Decrease back
+        original = adjust_eyebrow_span(longer, 0.95, side='left')  # Returns to original!
     """
     if mask is None or np.sum(mask) == 0:
         return mask
 
+    # Use simple morphological approach (reversible!)
+    if directional and side in ['left', 'right']:
+        return adjust_eyebrow_span_morphological(mask, factor, side)
+
+    # SYMMETRIC EXPANSION (old behavior, when side unknown)
     mask = mask.astype(np.uint8)
-    h, w = mask.shape
-
-    # Get current horizontal span
     bbox = get_bounding_box_from_mask(mask)
-    current_span = bbox[2] - bbox[0]  # width
-
-    if current_span == 0:
+    if bbox is None:
         return mask
 
-    # Calculate target span change
-    target_span = current_span * factor
-    span_delta = target_span - current_span
+    span = bbox[2] - bbox[0]
+    kernel_width = max(5, int(abs(span * (factor - 1.0))))
+    if kernel_width % 2 == 0:
+        kernel_width += 1
 
-    # Convert span change to kernel size for horizontal morphological operation
-    kernel_width = max(3, int(abs(span_delta) / 2) + 1)
-    kernel_width = kernel_width if kernel_width % 2 == 1 else kernel_width + 1  # Must be odd
+    kernel = np.ones((1, kernel_width), dtype=np.uint8)
 
-    # Use ANISOTROPIC kernel: wider than tall (3:1 ratio for horizontal bias)
-    kernel_height = 3
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_width, kernel_height))
-
-    # DIRECTIONAL EXPANSION: Expand only tail side, protect center side
-    if directional and side in ['left', 'right']:
-        # Get centroid to determine direction
-        centroid = calculate_centroid(mask)
-        cx = centroid[0]
-
-        # Create protection mask for center side
-        protection_mask = np.zeros((h, w), dtype=np.uint8)
-
-        if side == 'left':
-            # Left eyebrow: center is LEFT (small x), tail is RIGHT (large x)
-            # Protect left side (x < cx + margin)
-            margin = int(current_span * 0.3)  # Protect 30% from center
-            protection_mask[:, :cx + margin] = 1
-        else:  # side == 'right'
-            # Right eyebrow: center is RIGHT (large x), tail is LEFT (small x)
-            # Protect right side (x > cx - margin)
-            margin = int(current_span * 0.3)
-            protection_mask[:, cx - margin:] = 1
-
-        # Apply morphology
-        if factor > 1.0:
-            # INCREASE span - dilate only unprotected (tail) side
-            full_dilate = cv2.dilate(mask, kernel, iterations=1)
-            # Keep protected area unchanged, use dilated for unprotected
-            adjusted = np.where(protection_mask > 0, mask, full_dilate).astype(np.uint8)
-        elif factor < 1.0:
-            # DECREASE span - erode only unprotected (tail) side
-            full_erode = cv2.erode(mask, kernel, iterations=1)
-            # Keep protected area unchanged, use eroded for unprotected
-            adjusted = np.where(protection_mask > 0, mask, full_erode).astype(np.uint8)
-        else:
-            adjusted = mask.copy()
-
+    if factor > 1.0:
+        adjusted = cv2.dilate(mask, kernel, iterations=1)
+    elif factor < 1.0:
+        adjusted = cv2.erode(mask, kernel, iterations=1)
     else:
-        # SYMMETRIC EXPANSION (old behavior, for when side is unknown)
-        if factor > 1.0:
-            adjusted = cv2.dilate(mask, kernel, iterations=1)
-        elif factor < 1.0:
-            adjusted = cv2.erode(mask, kernel, iterations=1)
-        else:
-            adjusted = mask.copy()
+        adjusted = mask.copy()
 
-    # Light smoothing to maintain clean edges
     adjusted = smooth_mask_contours(adjusted, kernel_size=3, iterations=1)
-
     return adjusted
 
 

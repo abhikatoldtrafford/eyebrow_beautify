@@ -227,8 +227,8 @@ def main():
         if st.button("Connect to API"):
             check_api_connection()
 
-    # Phase 0: Upload
-    st.header("📤 Step 1: Upload Image")
+    # Step 1: Upload Image (Full Width)
+    st.header("📤 Upload Image")
 
     uploaded_file = st.file_uploader(
         MESSAGES['upload_prompt'],
@@ -239,96 +239,72 @@ def main():
     if uploaded_file is not None and st.session_state.original_image is None:
         process_uploaded_image(uploaded_file)
 
-    # Display results if processed
+    # Main Editing Interface (Side-by-Side Layout)
     if st.session_state.original_image is not None and st.session_state.eyebrows:
 
         st.divider()
 
-        # Phase 1A: View Results
-        st.header("👁️ Step 2: View Detection Results")
+        # Create side-by-side layout (2:1 ratio)
+        col_preview, col_controls = st.columns([2, 1])
 
-        # Extract masks for comparison
-        yolo_masks = {'left': None, 'right': None}
-        beautified_masks = {'left': None, 'right': None}
+        # LEFT COLUMN: Live Preview
+        with col_preview:
+            render_live_preview()
 
-        for eyebrow in st.session_state.eyebrows:
-            side = eyebrow['side']
-            # YOLO original
-            if eyebrow.get('original_mask_base64'):
-                yolo_masks[side] = base64_to_mask(eyebrow['original_mask_base64'])
-            # Current beautified (may have been edited)
-            beautified_masks[side] = get_current_mask(side)
+        # RIGHT COLUMN: Edit Controls
+        with col_controls:
+            st.subheader("🎨 Edit Controls")
 
-        # Create comparison views
-        actual_view, beautified_view = create_comparison_view(
-            st.session_state.original_image,
-            yolo_masks,
-            beautified_masks,
-            st.session_state.mediapipe_landmarks,
-            alpha=0.5
-        )
+            # Tab-based edit modes
+            tab_auto, tab_manual, tab_brush = st.tabs([
+                "⚡ Auto Adjust",
+                "🔧 Transform",
+                "🎨 Brush & Eraser"
+            ])
 
-        # Display side-by-side
-        col1, col2 = st.columns(2)
+            with tab_auto:
+                render_auto_edit_mode()
 
-        with col1:
-            st.subheader("🔍 Actual Detection")
-            st.caption("YOLO masks (Green) + MediaPipe keypoints (Yellow)")
-            st.image(cv2_to_pil(actual_view), use_container_width=True)
+            with tab_manual:
+                render_manual_edit_mode()
 
-        with col2:
-            st.subheader("✨ Beautified Result")
-            st.caption("Fused multi-source masks (Red=Left, Blue=Right)")
-            st.image(cv2_to_pil(beautified_view), use_container_width=True)
+            with tab_brush:
+                st.info("Brush & Eraser mode coming in Phase 3!")
+                st.caption("Will allow pixel-level mask editing with brush/eraser tools.")
 
+        # Bottom Section: Finalize & Download (Full Width)
         st.divider()
 
-        # Phase 1B: Edit Mode
-        st.header("🎨 Step 3: Edit Eyebrows")
+        col_bottom1, col_bottom2 = st.columns([1, 1])
 
-        edit_mode = st.radio(
-            "Choose edit mode:",
-            ["Auto Edit Mode", "Manual Edit Mode"],
-            horizontal=True,
-            help="Auto: Use +/− buttons for thickness/span. Manual: Rotate, scale, drag masks."
-        )
+        with col_bottom1:
+            st.subheader("🚀 Finalize")
 
-        if edit_mode == "Auto Edit Mode":
-            render_auto_edit_mode()
-        else:
-            render_manual_edit_mode()
+            col_btn1, col_btn2 = st.columns(2)
 
-        st.divider()
+            with col_btn1:
+                if st.button("✓ Finalize Masks", type="primary", use_container_width=True):
+                    finalize_masks()
 
-        # Phase 2: Submit & SD Enhancement
-        st.header("🚀 Step 4: Finalize & Enhance")
+            with col_btn2:
+                if st.button("✨ Enhance with AI", type="primary", use_container_width=True,
+                            disabled=not st.session_state.finalized):
+                    render_sd_enhancement()
 
-        col_final1, col_final2 = st.columns(2)
+            # Show finalized status
+            if st.session_state.finalized:
+                show_success(MESSAGES['finalized'])
 
-        with col_final1:
-            if st.button("✓ Finalize Masks", type="primary", use_container_width=True):
-                finalize_masks()
-
-        with col_final2:
-            if st.button("✨ Enhance with AI (Phase 2)", type="primary", use_container_width=True,
-                        disabled=not st.session_state.finalized):
-                render_sd_enhancement()
-
-        # Show finalized status
-        if st.session_state.finalized:
-            show_success(MESSAGES['finalized'])
+        with col_bottom2:
+            st.subheader("💾 Download")
+            render_download_section()
 
         # Display SD result if available
         if st.session_state.sd_result:
+            st.divider()
             st.subheader("🎯 SD Enhanced Result")
             sd_image = base64_to_image(st.session_state.sd_result)
             st.image(cv2_to_pil(sd_image), use_container_width=True)
-
-        st.divider()
-
-        # Download section
-        st.header("💾 Step 5: Download Results")
-        render_download_section()
 
 
 # =============================================================================
@@ -336,66 +312,65 @@ def main():
 # =============================================================================
 
 def render_auto_edit_mode():
-    """Render auto edit mode with +/− buttons."""
-    st.subheader("Auto Edit Mode")
-    st.caption("Use +/− buttons to adjust thickness and span. Each click = 5% change.")
+    """Render auto edit mode with +/− buttons (vertical layout - no nested columns)."""
+    st.caption("Adjust thickness and span with +/− buttons. Each click = 5% change.")
 
     client = get_api_client()
 
-    # Create columns for left and right eyebrows
-    col_left, col_right = st.columns(2)
+    # Select which eyebrow to edit (no nested columns!)
+    edit_side = st.radio("Select Eyebrow:", ["left", "right"], horizontal=True, key="auto_edit_side")
 
-    for col, side in [(col_left, 'left'), (col_right, 'right')]:
-        with col:
-            st.write(f"### {side.title()} Eyebrow")
+    if get_current_mask(edit_side) is None:
+        st.info(f"No {edit_side} eyebrow detected")
+        return
 
-            if get_current_mask(side) is None:
-                st.info(f"No {side} eyebrow detected")
-                continue
+    st.divider()
 
-            # Thickness controls
-            st.write("**Thickness**")
-            thick_col1, thick_col2, thick_col3 = st.columns([1, 2, 1])
+    # Thickness controls (simple horizontal buttons)
+    st.write("**Thickness**")
+    col1, col2, col3 = st.columns([1, 2, 1])
 
-            with thick_col1:
-                if st.button("−", key=f"{side}_thick_dec"):
-                    adjust_eyebrow(client, side, 'thickness', 'decrease')
+    with col1:
+        if st.button("−", key=f"{edit_side}_thick_dec", use_container_width=True):
+            adjust_eyebrow(client, edit_side, 'thickness', 'decrease')
 
-            with thick_col2:
-                clicks = st.session_state.clicks[side]['thickness']
-                change = clicks * THICKNESS_INCREMENT * 100
-                st.metric("Change", f"{change:+.0f}%", delta=None)
+    with col2:
+        clicks = st.session_state.clicks[edit_side]['thickness']
+        change = clicks * THICKNESS_INCREMENT * 100
+        st.metric("", f"{change:+.0f}%", label_visibility="collapsed")
 
-            with thick_col3:
-                if st.button("+", key=f"{side}_thick_inc"):
-                    adjust_eyebrow(client, side, 'thickness', 'increase')
+    with col3:
+        if st.button("+", key=f"{edit_side}_thick_inc", use_container_width=True):
+            adjust_eyebrow(client, edit_side, 'thickness', 'increase')
 
-            # Span controls
-            st.write("**Span (Length)**")
-            span_col1, span_col2, span_col3 = st.columns([1, 2, 1])
+    # Span controls (simple horizontal buttons)
+    st.write("**Span (Length)**")
+    col4, col5, col6 = st.columns([1, 2, 1])
 
-            with span_col1:
-                if st.button("−", key=f"{side}_span_dec"):
-                    adjust_eyebrow(client, side, 'span', 'decrease')
+    with col4:
+        if st.button("−", key=f"{edit_side}_span_dec", use_container_width=True):
+            adjust_eyebrow(client, edit_side, 'span', 'decrease')
 
-            with span_col2:
-                clicks = st.session_state.clicks[side]['span']
-                change = clicks * SPAN_INCREMENT * 100
-                st.metric("Change", f"{change:+.0f}%", delta=None)
+    with col5:
+        clicks = st.session_state.clicks[edit_side]['span']
+        change = clicks * SPAN_INCREMENT * 100
+        st.metric("", f"{change:+.0f}%", label_visibility="collapsed")
 
-            with span_col3:
-                if st.button("+", key=f"{side}_span_inc"):
-                    adjust_eyebrow(client, side, 'span', 'increase')
+    with col6:
+        if st.button("+", key=f"{edit_side}_span_inc", use_container_width=True):
+            adjust_eyebrow(client, edit_side, 'span', 'increase')
 
-            # Reset button
-            if st.button(f"🔄 Reset {side.title()}", key=f"{side}_reset"):
-                reset_eyebrow(side)
+    st.divider()
 
-            # Show validation metrics
-            eyebrow_data = next((eb for eb in st.session_state.eyebrows if eb['side'] == side), None)
-            if eyebrow_data:
-                with st.expander(f"📊 {side.title()} Validation Metrics"):
-                    display_validation_metrics(eyebrow_data.get('validation', {}), side)
+    # Reset button
+    if st.button(f"🔄 Reset {edit_side.title()}", key=f"{edit_side}_reset_auto", use_container_width=True):
+        reset_eyebrow(edit_side)
+
+    # Show validation metrics
+    eyebrow_data = next((eb for eb in st.session_state.eyebrows if eb['side'] == edit_side), None)
+    if eyebrow_data:
+        with st.expander(f"📊 Validation Metrics"):
+            display_validation_metrics(eyebrow_data.get('validation', {}), edit_side)
 
 
 def adjust_eyebrow(client, side: str, adjustment_type: str, direction: str):
@@ -451,89 +426,256 @@ def reset_eyebrow(side: str):
 
 
 # =============================================================================
+# LIVE PREVIEW PANEL
+# =============================================================================
+
+def render_live_preview():
+    """Render live preview panel with multiple display modes."""
+
+    st.subheader("👁️ Live Preview")
+
+    # Preview controls
+    col_mode, col_opacity = st.columns([3, 2])
+
+    with col_mode:
+        preview_mode = st.selectbox(
+            "View Mode",
+            ["Overlay", "Side-by-Side", "Difference"],
+            key="preview_mode",
+            help="Overlay: Current masks on image | Side-by-Side: Before/After | Difference: Changed pixels"
+        )
+
+    with col_opacity:
+        opacity = st.slider(
+            "Opacity",
+            0.0, 1.0,
+            st.session_state.preview_opacity,
+            0.1,
+            key="opacity_slider",
+            help="Adjust mask overlay transparency"
+        )
+        st.session_state.preview_opacity = opacity
+
+    # Get current masks
+    left_mask = get_current_mask('left')
+    right_mask = get_current_mask('right')
+    original = st.session_state.original_image
+
+    # Generate preview based on mode
+    if preview_mode == "Overlay":
+        # Show original image with current masks overlaid
+        preview = original.copy()
+
+        if left_mask is not None:
+            preview = overlay_mask_on_image(preview, left_mask, COLORS['left_eyebrow'], opacity)
+
+        if right_mask is not None:
+            preview = overlay_mask_on_image(preview, right_mask, COLORS['right_eyebrow'], opacity)
+
+        st.image(cv2_to_pil(preview), use_container_width=True, caption="Current Eyebrows (Red=Left, Blue=Right)")
+
+    elif preview_mode == "Side-by-Side":
+        # Show before (YOLO) vs after (current) comparison
+        yolo_masks = {'left': None, 'right': None}
+        current_masks = {'left': left_mask, 'right': right_mask}
+
+        for eyebrow in st.session_state.eyebrows:
+            side = eyebrow['side']
+            if eyebrow.get('original_mask_base64'):
+                yolo_masks[side] = base64_to_mask(eyebrow['original_mask_base64'])
+
+        before_view, after_view = create_comparison_view(
+            original,
+            yolo_masks,
+            current_masks,
+            st.session_state.mediapipe_landmarks,
+            alpha=opacity
+        )
+
+        # Show both views stacked vertically
+        col_before, col_after = st.columns(2)
+
+        with col_before:
+            st.caption("🔍 Before (YOLO)")
+            st.image(cv2_to_pil(before_view), use_container_width=True)
+
+        with col_after:
+            st.caption("✨ After (Current)")
+            st.image(cv2_to_pil(after_view), use_container_width=True)
+
+    elif preview_mode == "Difference":
+        # Show difference map (added/removed pixels)
+        diff_image = create_difference_map(left_mask, right_mask)
+        st.image(cv2_to_pil(diff_image), use_container_width=True,
+                caption="Difference Map (Green=Added, Red=Removed)")
+
+    # Zoom controls
+    st.caption("🔍 Zoom")
+    zoom_col1, zoom_col2, zoom_col3 = st.columns([1, 2, 1])
+
+    with zoom_col1:
+        if st.button("➖", key="zoom_out", help="Zoom out", use_container_width=True):
+            from streamlit_config import ZOOM_CONFIG
+            st.session_state.zoom_level = max(
+                ZOOM_CONFIG['min_zoom'],
+                st.session_state.zoom_level - ZOOM_CONFIG['zoom_step']
+            )
+            st.rerun()
+
+    with zoom_col2:
+        zoom_pct = st.session_state.zoom_level * 100
+        st.caption(f"**{zoom_pct:.0f}%**", help="Current zoom level")
+
+    with zoom_col3:
+        if st.button("➕", key="zoom_in", help="Zoom in", use_container_width=True):
+            from streamlit_config import ZOOM_CONFIG
+            st.session_state.zoom_level = min(
+                ZOOM_CONFIG['max_zoom'],
+                st.session_state.zoom_level + ZOOM_CONFIG['zoom_step']
+            )
+            st.rerun()
+
+
+def create_difference_map(left_mask: Optional[np.ndarray], right_mask: Optional[np.ndarray]) -> np.ndarray:
+    """
+    Create difference map showing changes from original YOLO masks.
+
+    Green = pixels added
+    Red = pixels removed
+    """
+    # Get YOLO original masks
+    yolo_left = None
+    yolo_right = None
+
+    for eyebrow in st.session_state.eyebrows:
+        side = eyebrow['side']
+        if eyebrow.get('original_mask_base64'):
+            if side == 'left':
+                yolo_left = base64_to_mask(eyebrow['original_mask_base64'])
+            else:
+                yolo_right = base64_to_mask(eyebrow['original_mask_base64'])
+
+    # Create difference visualization
+    diff_image = st.session_state.original_image.copy()
+
+    # Left eyebrow difference
+    if left_mask is not None and yolo_left is not None:
+        # Added pixels (in current but not in YOLO)
+        added = (left_mask > 0) & (yolo_left == 0)
+        # Removed pixels (in YOLO but not in current)
+        removed = (left_mask == 0) & (yolo_left > 0)
+
+        diff_image[added] = (0, 255, 0)  # Green = added
+        diff_image[removed] = (0, 0, 255)  # Red = removed
+
+    # Right eyebrow difference
+    if right_mask is not None and yolo_right is not None:
+        # Added pixels (in current but not in YOLO)
+        added = (right_mask > 0) & (yolo_right == 0)
+        # Removed pixels (in YOLO but not in current)
+        removed = (right_mask == 0) & (yolo_right > 0)
+
+        diff_image[added] = (0, 255, 0)  # Green = added
+        diff_image[removed] = (0, 0, 255)  # Red = removed
+
+    return diff_image
+
+
+# =============================================================================
 # MANUAL EDIT MODE
 # =============================================================================
 
 def render_manual_edit_mode():
-    """Render manual edit mode with transform controls."""
-    st.subheader("Manual Edit Mode")
-    st.caption("Apply geometric transformations to eyebrow masks.")
+    """Render manual edit mode with live transform preview."""
+    st.caption("Apply geometric transformations to eyebrow masks. Changes appear instantly in the live preview.")
 
     # Select eyebrow to edit
-    edit_side = st.radio("Select eyebrow to edit:", ["left", "right"], horizontal=True)
+    edit_side = st.radio("Select Eyebrow:", ["left", "right"], horizontal=True, key="manual_edit_side")
 
     if get_current_mask(edit_side) is None:
         st.info(f"No {edit_side} eyebrow detected")
         return
 
-    st.write(f"### Editing {edit_side.title()} Eyebrow")
+    st.divider()
 
     # Get current transform
     current_transform = st.session_state.current_masks[edit_side]['transform']
 
-    # Transform controls
-    col1, col2 = st.columns(2)
+    # Rotation
+    st.write("**Rotation**")
+    rotation = st.slider(
+        "Angle (degrees)",
+        min_value=ROTATION_RANGE[0],
+        max_value=ROTATION_RANGE[1],
+        value=current_transform['rotation'],
+        step=1,
+        key=f"{edit_side}_rotation_slider",
+        help="Rotate the eyebrow mask",
+        label_visibility="collapsed"
+    )
 
-    with col1:
-        rotation = st.slider(
-            "Rotation (degrees)",
-            min_value=ROTATION_RANGE[0],
-            max_value=ROTATION_RANGE[1],
-            value=current_transform['rotation'],
-            step=1,
-            key=f"{edit_side}_rotation"
-        )
+    # Scale
+    st.write("**Scale**")
+    scale = st.slider(
+        "Size",
+        min_value=SCALE_RANGE[0],
+        max_value=SCALE_RANGE[1],
+        value=current_transform['scale'],
+        step=0.05,
+        key=f"{edit_side}_scale_slider",
+        help="Resize the eyebrow mask",
+        label_visibility="collapsed"
+    )
 
-    with col2:
-        scale = st.slider(
-            "Scale",
-            min_value=SCALE_RANGE[0],
-            max_value=SCALE_RANGE[1],
-            value=current_transform['scale'],
-            step=0.05,
-            key=f"{edit_side}_scale"
-        )
+    # Translation
+    st.write("**Position**")
+    col_dx, col_dy = st.columns(2)
 
-    # Translation controls
-    st.write("**Translation (pixels)**")
-    trans_col1, trans_col2 = st.columns(2)
-
-    with trans_col1:
+    with col_dx:
         dx = st.number_input(
-            "Horizontal (dx)",
+            "Horizontal",
             min_value=-100,
             max_value=100,
             value=current_transform['dx'],
             step=1,
-            key=f"{edit_side}_dx"
+            key=f"{edit_side}_dx_input"
         )
 
-    with trans_col2:
+    with col_dy:
         dy = st.number_input(
-            "Vertical (dy)",
+            "Vertical",
             min_value=-100,
             max_value=100,
             value=current_transform['dy'],
             step=1,
-            key=f"{edit_side}_dy"
+            key=f"{edit_side}_dy_input"
         )
 
-    # Apply button
-    if st.button(f"Apply Transformations to {edit_side.title()}", key=f"{edit_side}_apply_transform"):
+    # Check if transforms changed and apply immediately
+    transform_changed = (
+        rotation != current_transform['rotation'] or
+        scale != current_transform['scale'] or
+        dx != current_transform['dx'] or
+        dy != current_transform['dy']
+    )
+
+    if transform_changed:
+        # Apply transforms in real-time (no button needed!)
         apply_manual_transforms(edit_side, rotation, scale, dx, dy)
 
-    # Reset button
-    if st.button(f"Reset {edit_side.title()} Transform", key=f"{edit_side}_reset_transform"):
-        reset_eyebrow(edit_side)
+    st.divider()
 
-    # Preview
-    st.write("**Preview**")
-    preview_mask = get_current_mask(edit_side)
-    if preview_mask is not None:
-        preview_image = st.session_state.original_image.copy()
-        color = COLORS['left_eyebrow'] if edit_side == 'left' else COLORS['right_eyebrow']
-        preview_overlay = overlay_mask_on_image(preview_image, preview_mask, color, alpha=0.6)
-        st.image(cv2_to_pil(preview_overlay), use_container_width=True)
+    # Action buttons
+    col_btn1, col_btn2 = st.columns(2)
+
+    with col_btn1:
+        if st.button(f"🔄 Reset", key=f"{edit_side}_reset_transform", use_container_width=True):
+            reset_eyebrow(edit_side)
+
+    with col_btn2:
+        if st.button(f"⬅️ Center", key=f"{edit_side}_center_transform", use_container_width=True):
+            # Reset translation only
+            apply_manual_transforms(edit_side, rotation, scale, 0, 0)
 
 
 def apply_manual_transforms(side: str, rotation: float, scale: float, dx: int, dy: int):
