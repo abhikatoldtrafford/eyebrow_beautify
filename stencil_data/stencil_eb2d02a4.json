@@ -1,0 +1,81 @@
+{
+  "id": "eb2d02a4-01b0-457e-a3ee-5c11e8dfa3f0",
+  "side": "right",
+  "polygon": {
+    "points": [
+      [
+        537,
+        643
+      ],
+      [
+        537,
+        703
+      ],
+      [
+        600,
+        698
+      ],
+      [
+        653,
+        680
+      ],
+      [
+        703,
+        675
+      ],
+      [
+        768,
+        677
+      ],
+      [
+        813,
+        698
+      ],
+      [
+        847,
+        694
+      ],
+      [
+        847,
+        662
+      ],
+      [
+        800,
+        632
+      ],
+      [
+        796,
+        620
+      ],
+      [
+        631,
+        625
+      ],
+      [
+        599,
+        629
+      ],
+      [
+        585,
+        635
+      ],
+      [
+        537,
+        643
+      ]
+    ],
+    "num_points": 15,
+    "source": "user_edited"
+  },
+  "metadata": {
+    "side": "right",
+    "name": "Right Brow 11/13/2025",
+    "tags": [
+      "auto-generated"
+    ],
+    "notes": "Created with Brow Stencil App",
+    "created_at": "2025-11-13T10:52:28.095759",
+    "source_image_hash": "908d6a79372bca6e76e4cd458656a70447968d25c6f9d8fc4241d79ede1bf49b"
+  },
+  "version": "6.0"
+}

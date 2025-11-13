@@ -873,3 +873,393 @@ def adjust_eyebrow_multiple_times(mask, adjustment_type, direction, num_clicks, 
         adjusted = apply_eyebrow_adjustment(adjusted, adjustment_type, direction, increment, side=side)
 
     return adjusted
+
+
+# =============================================================================
+# POLYGON EXTRACTION UTILITIES (for Stencil System v6.0)
+# =============================================================================
+
+def extract_yolo_contour(mask, epsilon_factor=0.005):
+    """
+    Extract simplified polygon from YOLO binary mask.
+
+    Uses cv2.findContours to extract the boundary, then applies Douglas-Peucker
+    simplification to reduce the number of vertices while preserving shape.
+
+    Parameters:
+        mask: Binary mask (H, W), dtype=uint8, values 0 or 1
+        epsilon_factor: Approximation accuracy (fraction of perimeter)
+                       Lower = more points, higher = fewer points
+                       Default 0.005 = 0.5% of perimeter
+
+    Returns:
+        List of [x, y] coordinates defining the polygon
+        Empty list if no contour found
+
+    Example:
+        polygon = extract_yolo_contour(yolo_mask)
+        # [[120, 85], [135, 82], ..., [120, 85]]  (15-30 vertices typically)
+    """
+    if mask is None or np.sum(mask) == 0:
+        return []
+
+    # Ensure uint8 type
+    mask_uint8 = mask.astype(np.uint8)
+
+    # Find contours (only external boundary)
+    contours, _ = cv2.findContours(
+        mask_uint8,
+        cv2.RETR_EXTERNAL,       # Only outermost contour
+        cv2.CHAIN_APPROX_SIMPLE  # Compress horizontal/vertical segments
+    )
+
+    if not contours:
+        return []
+
+    # Get largest contour (main eyebrow region)
+    largest_contour = max(contours, key=cv2.contourArea)
+
+    # Apply Douglas-Peucker simplification
+    perimeter = cv2.arcLength(largest_contour, closed=True)
+    epsilon = epsilon_factor * perimeter
+    simplified = cv2.approxPolyDP(largest_contour, epsilon, closed=True)
+
+    # Convert from OpenCV format to list of [x, y]
+    points = simplified.squeeze()
+
+    # Handle single-point edge case
+    if len(points.shape) == 1:
+        points = points.reshape(-1, 2)
+
+    # Convert to list of lists
+    polygon = [[int(x), int(y)] for x, y in points]
+
+    # Close the polygon (ensure first point == last point)
+    if len(polygon) > 0 and polygon[0] != polygon[-1]:
+        polygon.append(polygon[0])
+
+    return polygon
+
+
+def point_to_segment_distance(point, p1, p2):
+    """
+    Calculate perpendicular distance from point to line segment.
+
+    This is the shortest distance from a point to a line segment (not the
+    infinite line, but the finite segment between p1 and p2).
+
+    Parameters:
+        point: [x, y] coordinates
+        p1: First endpoint [x, y]
+        p2: Second endpoint [x, y]
+
+    Returns:
+        Distance in pixels (float)
+
+    Algorithm:
+        1. Project point onto the infinite line containing the segment
+        2. Clamp projection to segment bounds [0, length]
+        3. Calculate distance from point to clamped projection
+    """
+    point = np.array(point, dtype=np.float32)
+    p1 = np.array(p1, dtype=np.float32)
+    p2 = np.array(p2, dtype=np.float32)
+
+    # Vector from p1 to p2
+    line_vec = p2 - p1
+    line_len = np.linalg.norm(line_vec)
+
+    if line_len == 0:
+        # Degenerate segment (p1 == p2)
+        return np.linalg.norm(point - p1)
+
+    # Unit vector along the line
+    line_unitvec = line_vec / line_len
+
+    # Vector from p1 to point
+    point_vec = point - p1
+
+    # Project point onto line (scalar projection)
+    projection_length = np.dot(point_vec, line_unitvec)
+
+    # Clamp to segment bounds
+    projection_length = np.clip(projection_length, 0, line_len)
+
+    # Find closest point on segment
+    closest_point = p1 + projection_length * line_unitvec
+
+    # Distance from point to closest point on segment
+    distance = np.linalg.norm(point - closest_point)
+
+    return float(distance)
+
+
+def find_closest_edge(point, polygon):
+    """
+    Find which edge in a polygon is closest to a given point.
+
+    Used when inserting MediaPipe landmarks into YOLO polygon - we need to
+    know which edge to insert each landmark after.
+
+    Parameters:
+        point: [x, y] coordinates
+        polygon: List of [x, y] vertices
+
+    Returns:
+        Index of first vertex of closest edge (int)
+        If polygon has vertices [v0, v1, v2, v3], edges are:
+          - Edge 0: v0 → v1
+          - Edge 1: v1 → v2
+          - Edge 2: v2 → v3
+          - Edge 3: v3 → v0 (wraps around)
+
+    Example:
+        closest_idx = find_closest_edge([150, 90], polygon)
+        # Returns 5, meaning insert after polygon[5], before polygon[6]
+    """
+    if not polygon or len(polygon) < 2:
+        return 0
+
+    min_dist = float('inf')
+    closest_idx = 0
+
+    # Check each edge
+    for i in range(len(polygon)):
+        p1 = polygon[i]
+        p2 = polygon[(i + 1) % len(polygon)]  # Wrap to first vertex
+
+        dist = point_to_segment_distance(point, p1, p2)
+
+        if dist < min_dist:
+            min_dist = dist
+            closest_idx = i
+
+    return closest_idx
+
+
+def insert_mp_into_polygon(yolo_polygon, mp_landmarks):
+    """
+    Insert MediaPipe landmarks into YOLO polygon at appropriate positions.
+
+    This is the core "grounding" operation: combining YOLO's dense detection
+    with MediaPipe's precise landmarks.
+
+    Strategy:
+        1. For each MediaPipe landmark:
+           - Find the closest edge in the YOLO polygon
+           - Insert the landmark after that edge's first vertex
+        2. Result: Denser polygon with both YOLO shape + MP accuracy
+
+    Parameters:
+        yolo_polygon: List of [x, y] from YOLO contour (15-30 vertices typically)
+        mp_landmarks: List of [x, y] from MediaPipe (10 points per eyebrow)
+
+    Returns:
+        Merged polygon with YOLO + MP points (25-40 vertices typically)
+
+    Example:
+        yolo_polygon = [[120, 85], [140, 82], ..., [120, 85]]  # 18 vertices
+        mp_landmarks = [[125, 84], [145, 81], ..., [215, 87]]  # 10 landmarks
+
+        merged = insert_mp_into_polygon(yolo_polygon, mp_landmarks)
+        # [[120, 85], [125, 84], [140, 82], [145, 81], ...]  # 28 vertices
+    """
+    if not yolo_polygon or not mp_landmarks:
+        return yolo_polygon
+
+    result = yolo_polygon.copy()
+
+    # Sort MP landmarks by their insertion positions to maintain order
+    # This prevents issues when inserting multiple points
+    insertions = []
+    for mp_point in mp_landmarks:
+        closest_edge_idx = find_closest_edge(mp_point, result)
+        insertions.append((closest_edge_idx, mp_point))
+
+    # Sort by edge index (descending) so we can insert from end to start
+    # This way earlier insertions don't affect later indices
+    insertions.sort(key=lambda x: x[0], reverse=True)
+
+    # Insert each MP point
+    for edge_idx, mp_point in insertions:
+        insert_position = edge_idx + 1
+        result.insert(insert_position, mp_point)
+
+    return result
+
+
+def calculate_alignment_score(yolo_polygon, mp_landmarks, image_shape):
+    """
+    Check if YOLO polygon and MediaPipe landmarks are well-aligned.
+
+    This determines whether to merge (aligned) or fallback to MP-only (misaligned).
+
+    Metrics:
+        1. IoU (Intersection over Union): How much overlap between regions
+        2. Average Distance: How far MP points are from YOLO contour
+        3. MP Inside Check: How many MP points are inside YOLO polygon
+
+    Decision Criteria:
+        - ALIGNED if IoU ≥ 0.3 AND avg_distance ≤ 20 pixels
+        - MISMATCH otherwise → use MediaPipe only
+
+    Parameters:
+        yolo_polygon: List of [x, y] from YOLO
+        mp_landmarks: List of [x, y] from MediaPipe
+        image_shape: (height, width) of image
+
+    Returns:
+        {
+            'aligned': bool,
+            'iou': float (0-1),
+            'avg_distance': float (pixels),
+            'mp_inside_count': int,
+            'mp_inside_ratio': float (0-1),
+            'all_mp_inside': bool
+        }
+
+    Example:
+        alignment = calculate_alignment_score(yolo_polygon, mp_landmarks, (600, 800))
+        if alignment['all_mp_inside']:
+            # Keep YOLO only (MP already covered)
+        elif alignment['aligned']:
+            # Merge them
+        else:
+            # Use MP only
+    """
+    height, width = image_shape[:2]
+
+    # Convert MP landmarks to binary mask
+    mp_mask = np.zeros((height, width), dtype=np.uint8)
+    if len(mp_landmarks) >= 3:  # Need at least 3 points for polygon
+        mp_points = np.array(mp_landmarks, dtype=np.int32)
+        cv2.fillPoly(mp_mask, [mp_points], 1)
+
+    # Convert YOLO polygon to binary mask
+    yolo_mask = np.zeros((height, width), dtype=np.uint8)
+    if len(yolo_polygon) >= 3:
+        yolo_points = np.array(yolo_polygon, dtype=np.int32)
+        cv2.fillPoly(yolo_mask, [yolo_points], 1)
+
+    # Calculate IoU
+    intersection = np.logical_and(yolo_mask, mp_mask).sum()
+    union = np.logical_or(yolo_mask, mp_mask).sum()
+    iou = intersection / union if union > 0 else 0.0
+
+    # Calculate buffer size: 10% of eyebrow bounding box width
+    # This allows MP points slightly outside YOLO to still be considered "inside"
+    yolo_bbox = calculate_bbox(yolo_polygon)
+    bbox_width = yolo_bbox[2] - yolo_bbox[0]  # x_max - x_min
+    bbox_height = yolo_bbox[3] - yolo_bbox[1]  # y_max - y_min
+    buffer_distance = 0.10 * max(bbox_width, bbox_height)  # 10% of larger dimension
+
+    # Calculate average distance from MP points to YOLO contour
+    # AND check how many MP points are inside YOLO polygon (with and without buffer)
+    distances = []
+    mp_inside_count = 0  # Strict check (exactly inside)
+    mp_inside_with_buffer_count = 0  # With 10% buffer
+    yolo_points_arr = np.array(yolo_polygon, dtype=np.int32)
+
+    for mp_point in mp_landmarks:
+        # cv2.pointPolygonTest returns signed distance
+        # positive = inside, negative = outside, 0 = on edge
+        dist = cv2.pointPolygonTest(yolo_points_arr, tuple(mp_point), measureDist=True)
+
+        if dist >= 0:  # Inside or on edge (strict)
+            mp_inside_count += 1
+            mp_inside_with_buffer_count += 1
+        elif abs(dist) <= buffer_distance:  # Outside but within 10% buffer
+            mp_inside_with_buffer_count += 1
+
+        distances.append(abs(dist))
+
+    avg_distance = np.mean(distances) if distances else float('inf')
+    mp_inside_ratio = mp_inside_count / len(mp_landmarks) if mp_landmarks else 0.0
+    all_mp_inside = mp_inside_count == len(mp_landmarks)
+
+    # NEW: Check with buffer
+    mp_inside_with_buffer_ratio = mp_inside_with_buffer_count / len(mp_landmarks) if mp_landmarks else 0.0
+    all_mp_inside_with_buffer = mp_inside_with_buffer_count == len(mp_landmarks)
+
+    # Determine alignment (thresholds from UI_GUIDE.md)
+    aligned = (iou >= 0.3) and (avg_distance <= 20.0)
+
+    return {
+        'aligned': aligned,
+        'iou': float(iou),
+        'avg_distance': float(avg_distance),
+        'mp_inside_count': mp_inside_count,
+        'mp_inside_ratio': float(mp_inside_ratio),
+        'all_mp_inside': all_mp_inside,
+        # NEW: Buffer-based metrics (10% tolerance)
+        'buffer_distance': float(buffer_distance),
+        'mp_inside_with_buffer_count': mp_inside_with_buffer_count,
+        'mp_inside_with_buffer_ratio': float(mp_inside_with_buffer_ratio),
+        'all_mp_inside_with_buffer': all_mp_inside_with_buffer
+    }
+
+
+def validate_polygon(polygon, config):
+    """
+    Validate that a polygon has reasonable properties.
+
+    Checks:
+        1. Has minimum number of points (default: 5)
+        2. Doesn't have too many points (default: 50)
+        3. Is closed (first point == last point)
+
+    Parameters:
+        polygon: List of [x, y] coordinates
+        config: Configuration dict with 'min_polygon_points', 'max_polygon_points'
+
+    Returns:
+        {
+            'valid': bool (True if all checks pass),
+            'checks': {
+                'has_points': bool,
+                'not_too_many': bool,
+                'is_closed': bool
+            }
+        }
+
+    Example:
+        validation = validate_polygon(polygon, {'min_polygon_points': 5, 'max_polygon_points': 50})
+        if validation['valid']:
+            # Polygon is good
+    """
+    min_points = config.get('min_polygon_points', 5)
+    max_points = config.get('max_polygon_points', 50)
+
+    checks = {
+        'has_points': len(polygon) >= min_points,
+        'not_too_many': len(polygon) <= max_points,
+        'is_closed': polygon[0] == polygon[-1] if len(polygon) > 1 else False
+    }
+
+    return {
+        'valid': all(checks.values()),
+        'checks': checks
+    }
+
+
+def calculate_bbox(polygon):
+    """
+    Calculate bounding box from polygon coordinates.
+
+    Parameters:
+        polygon: List of [x, y] coordinates
+
+    Returns:
+        [x1, y1, x2, y2] bounding box (list of 4 ints)
+
+    Example:
+        bbox = calculate_bbox([[120, 85], [135, 82], [150, 90]])
+        # [120, 82, 150, 90]
+    """
+    if not polygon or len(polygon) == 0:
+        return [0, 0, 0, 0]
+
+    xs = [p[0] for p in polygon]
+    ys = [p[1] for p in polygon]
+
+    return [min(xs), min(ys), max(xs), max(ys)]

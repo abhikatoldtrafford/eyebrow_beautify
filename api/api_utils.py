@@ -8,7 +8,7 @@ import io
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
 from PIL import Image
 
 
@@ -350,3 +350,77 @@ def config_to_dict(config_obj) -> dict:
         'gaussian_kernel': config_obj.gaussian_kernel,
         'gaussian_sigma': config_obj.gaussian_sigma,
     }
+
+
+# =============================================================================
+# STENCIL EXTRACTION UTILITIES (v6.0)
+# =============================================================================
+
+def extract_stencils_from_image(image_path: str, yolo_model, config: dict) -> List[Dict]:
+    """
+    Extract stencil polygons from image using YOLO + MediaPipe.
+
+    Args:
+        image_path: Path to image file
+        yolo_model: Loaded YOLO model
+        config: Configuration dictionary
+
+    Returns:
+        List of stencil extraction results
+    """
+    import cv2
+    import yolo_pred
+    import mediapipe_pred
+    import stencil_extract
+
+    # Load image
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Could not load image: {image_path}")
+
+    image_shape = image.shape[:2]
+
+    # Run YOLO detection
+    yolo_result = yolo_pred.detect_yolo(yolo_model, image_path)
+
+    # Run MediaPipe detection
+    mp_result = mediapipe_pred.detect_mediapipe(image)
+
+    # Extract stencil polygons
+    stencils = stencil_extract.extract_stencils_from_detections(
+        yolo_result,
+        mp_result,
+        image_shape,
+        config
+    )
+
+    return stencils
+
+
+def convert_stencil_result(stencil: Dict, image_shape: Tuple[int, int]):
+    """
+    Convert stencil extraction result to API response model.
+
+    Args:
+        stencil: Stencil result dict from stencil_extract
+        image_shape: Image shape (height, width)
+
+    Returns:
+        StencilPolygon API model
+    """
+    from . import api_models
+    from datetime import datetime
+
+    return api_models.StencilPolygon(
+        stencil_id=None,  # Not saved yet
+        side=stencil['side'],
+        polygon=stencil['polygon'],
+        num_points=stencil['num_points'],
+        source=stencil['source'],
+        bbox=stencil['bbox'],
+        alignment=api_models.PolygonAlignment(**stencil['alignment']),
+        validation=api_models.PolygonValidation(**stencil['validation']),
+        metadata=api_models.StencilMetadata(**stencil['metadata']),
+        created_at=datetime.utcnow().isoformat() + 'Z',
+        image_shape=image_shape
+    )

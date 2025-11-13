@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600"
+     viewBox="518 722 344 105"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Eyebrow stencil boundary -->
+  <polygon points="528,758 529,808 598,805 706,787 752,787 814,800 834,816 852,817 852,787 843,786 816,755 799,745 794,732 585,732 583,742 528,758"
+           fill="none"
+           stroke="black"
+           stroke-width="2"
+           stroke-linecap="round"
+           stroke-linejoin="round"/>
+
+  <!-- Metadata -->
+  <metadata>
+    <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+             xmlns:dc="http://purl.org/dc/elements/1.1/">
+      <rdf:Description>
+        <dc:title>Eyebrow Stencil - Right</dc:title>
+        <dc:creator>Brow Stencil System v6.0</dc:creator>
+        <dc:date>2025-11-13T09:18:22.294626</dc:date>
+        <dc:description>
+          Stencil ID: b9096527-d4ce-4472-8189-b88da1c27645
+          Side: right
+          Points: 16
+          Source: user_edited
+        </dc:description>
+      </rdf:Description>
+    </rdf:RDF>
+  </metadata>
+
+</svg>

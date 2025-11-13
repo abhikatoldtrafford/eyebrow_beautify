@@ -1,0 +1,29 @@
+{
+  "id": "7fb3d993-945d-44e4-a4d5-695f7c00bbb4",
+  "side": "left",
+  "polygon": {
+    "points": [
+      [
+        100,
+        200
+      ],
+      [
+        150,
+        220
+      ]
+    ],
+    "num_points": 2,
+    "source": "user_edited"
+  },
+  "metadata": {
+    "side": "left",
+    "name": "Test",
+    "tags": [
+      "test"
+    ],
+    "notes": "Test",
+    "created_at": "2025-11-13T10:45:53.113279",
+    "source_image_hash": "9a5925f12e8eda76b968984e10b419e8a602f373325bb3bdf3a4665be4568897"
+  },
+  "version": "6.0"
+}

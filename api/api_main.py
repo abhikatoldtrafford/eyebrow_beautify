@@ -23,7 +23,6 @@ import cv2
 # Import core modules
 import yolo_pred
 import mediapipe_pred
-import beautify
 import preprocess
 from api import api_models, api_utils
 
@@ -58,7 +57,12 @@ class AppState:
     """Application state to store loaded models."""
     yolo_model = None
     mediapipe_available = True
-    current_config = beautify.DEFAULT_CONFIG.copy()
+    current_config = {
+        'yolo_conf_threshold': 0.25,
+        'yolo_simplify_epsilon': 0.005,
+        'alignment_iou_threshold': 0.3,
+        'alignment_distance_threshold': 20
+    }
 
 
 @app.on_event("startup")
@@ -221,116 +225,23 @@ async def preprocess_face_endpoint(request: api_models.PreprocessRequest):
         )
 
 
-# =============================================================================
-# BEAUTIFY ENDPOINT (Complete Pipeline)
-# =============================================================================
 
-@app.post("/beautify", response_model=api_models.BeautifyResponse, tags=["Beautification"])
-async def beautify_eyebrows_endpoint(
-    file: UploadFile = File(..., description="Image file (JPG, PNG)"),
-    config: Optional[str] = None  # JSON string for custom config
-):
-    """
-    Complete eyebrow beautification pipeline.
-
-    Uploads an image and returns beautified eyebrows with validation metrics.
-
-    **Process:**
-    1. YOLO detection (eyebrows, eyes, eye_box, hair)
-    2. MediaPipe face landmarks
-    3. Face alignment
-    4. Multi-source fusion
-    5. Validation
-
-    **Returns:**
-    - Beautified eyebrow masks (base64 encoded)
-    - Validation metrics
-    - Processing time
-    """
-    start_time = time.time()
-
-    # Check model loaded
-    if AppState.yolo_model is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="YOLO model not loaded. Service unavailable."
-        )
-
-    try:
-        # Save uploaded file temporarily
-        file_content = await file.read()
-        temp_path = api_utils.save_uploaded_file(file_content, file.filename)
-
-        # Parse config if provided
-        use_config = AppState.current_config.copy()
-        if config:
-            import json
-            custom_config = json.loads(config)
-            use_config.update(custom_config)
-
-        # Run beautification pipeline
-        results = beautify.beautify_eyebrows(
-            temp_path,
-            AppState.yolo_model,
-            config=use_config
-        )
-
-        # Load image to get shape
-        img = cv2.imread(temp_path)
-        img_shape = img.shape[:2]  # (height, width)
-
-        # Convert results to API format
-        eyebrow_results = [
-            api_utils.convert_beautify_result(r, include_masks=True)
-            for r in results
-        ]
-
-        # Cleanup
-        api_utils.cleanup_temp_file(temp_path)
-
-        # Calculate processing time
-        processing_time = (time.time() - start_time) * 1000
-
-        return api_models.BeautifyResponse(
-            success=True,
-            message=f"Successfully processed {len(results)} eyebrow(s)",
-            eyebrows=eyebrow_results,
-            processing_time_ms=processing_time,
-            image_shape=img_shape
-        )
-
-    except ValueError as e:
-        # User/data error - validation failed, no eyebrows detected, etc.
-        if 'temp_path' in locals():
-            api_utils.cleanup_temp_file(temp_path)
-
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Processing failed: {str(e)}"
-        )
-    except Exception as e:
-        # Actual server error - model crash, OOM, etc.
-        import traceback
-        print(f"\n❌ EXCEPTION in beautify endpoint:")
-        traceback.print_exc()
-
-        if 'temp_path' in locals():
-            api_utils.cleanup_temp_file(temp_path)
-
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal server error: {str(e)}"
-        )
-
-
-@app.post("/beautify/base64", response_model=api_models.BeautifyResponse, tags=["Beautification"])
+@app.post("/beautify/base64", response_model=api_models.StencilExtractionResponse, tags=["Stencil Extraction"])
 async def beautify_eyebrows_base64(request: api_models.BeautifyRequest):
     """
-    Complete eyebrow beautification pipeline (base64 input).
+    Extract eyebrow stencil polygons from photo (v6.0).
 
-    Alternative endpoint that accepts base64 encoded images in JSON request body.
+    **New behavior (v6.0):** Returns polygon boundaries, NOT filled masks.
+    **Use case:** Generate stencil for eyebrow grooming guide.
 
-    **Use case:** When uploading from JavaScript/web clients.
+    **Process:**
+    1. Detect eyebrows with YOLO (dense regions)
+    2. Detect landmarks with MediaPipe (precise boundaries)
+    3. Extract polygon contours from YOLO masks
+    4. Ground polygons against MediaPipe landmarks (with 10% buffer)
+    5. Return simplified polygon vertices
+
+    **Response:** Polygon coordinates [[x, y], ...] for React curve editor
     """
     start_time = time.time()
 
@@ -355,6 +266,11 @@ async def beautify_eyebrows_base64(request: api_models.BeautifyRequest):
 
         # Save to temp file for processing
         import uuid
+        from pathlib import Path
+
+        # Ensure temp directory exists
+        Path("temp").mkdir(exist_ok=True)
+
         temp_path = f"temp/{uuid.uuid4()}.jpg"
         cv2.imwrite(temp_path, img)
 
@@ -363,8 +279,8 @@ async def beautify_eyebrows_base64(request: api_models.BeautifyRequest):
         if isinstance(use_config, api_models.BeautifyConfig):
             use_config = api_utils.config_to_dict(use_config)
 
-        # Run beautification
-        results = beautify.beautify_eyebrows(
+        # NEW: Run stencil extraction (polygon-based, not mask-based)
+        stencil_results = api_utils.extract_stencils_from_image(
             temp_path,
             AppState.yolo_model,
             config=use_config
@@ -372,10 +288,10 @@ async def beautify_eyebrows_base64(request: api_models.BeautifyRequest):
 
         img_shape = img.shape[:2]
 
-        # Convert results
-        eyebrow_results = [
-            api_utils.convert_beautify_result(r, include_masks=request.return_masks)
-            for r in results
+        # Convert to API response format
+        stencil_polygons = [
+            api_utils.convert_stencil_result(r, img_shape)
+            for r in stencil_results
         ]
 
         # Cleanup
@@ -383,12 +299,13 @@ async def beautify_eyebrows_base64(request: api_models.BeautifyRequest):
 
         processing_time = (time.time() - start_time) * 1000
 
-        return api_models.BeautifyResponse(
+        return api_models.StencilExtractionResponse(
             success=True,
-            message=f"Successfully processed {len(results)} eyebrow(s)",
-            eyebrows=eyebrow_results,
+            message=f"Successfully extracted {len(stencil_polygons)} stencil polygon(s)",
+            stencils=stencil_polygons,
             processing_time_ms=processing_time,
-            image_shape=img_shape
+            image_shape=img_shape,
+            preprocessing=None  # TODO: Add if preprocessing enabled
         )
 
     except HTTPException:
@@ -1164,6 +1081,296 @@ async def root():
             ]
         }
     }
+
+
+# =============================================================================
+# STENCIL LIBRARY ENDPOINTS (v6.0)
+# =============================================================================
+
+@app.post("/stencils/save", response_model=api_models.StencilSaveResponse, tags=["Stencil Library"])
+async def save_stencil(request: api_models.StencilSaveRequest):
+    """
+    Save edited stencil to library.
+
+    **Use case:** After user finishes editing polygon in React, save to persistent storage.
+
+    **Storage:** File-based JSON in `stencil_data/` directory (no database required).
+    """
+    try:
+        import stencil_storage
+
+        storage = stencil_storage.StencilStorage()
+
+        # Prepare polygon dict (as expected by storage layer)
+        polygon_dict = {
+            'points': request.polygon,
+            'num_points': len(request.polygon),
+            'source': 'user_edited'  # Since this is a user-edited stencil
+        }
+
+        # Prepare metadata
+        metadata = {
+            'side': request.side,
+            'name': request.name,
+            'tags': request.tags,
+            'notes': request.notes
+        }
+
+        # Convert base64 image to bytes if provided
+        image_data = None
+        if request.image_base64:
+            import base64
+            image_data = base64.b64decode(request.image_base64)
+
+        # Save stencil
+        stencil_id = storage.save_stencil(
+            polygon_dict,
+            metadata,
+            image_data=image_data
+        )
+
+        return api_models.StencilSaveResponse(
+            success=True,
+            message="Stencil saved successfully",
+            stencil_id=stencil_id,
+            file_path=f"stencil_data/stencil_{stencil_id}.json"
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save stencil: {str(e)}"
+        )
+
+
+@app.get("/stencils/list", response_model=api_models.StencilListResponse, tags=["Stencil Library"])
+async def list_stencils(
+    side: Optional[str] = None,
+    limit: int = 50
+):
+    """
+    List all saved stencils with optional filtering.
+
+    **Query params:**
+    - `side`: Filter by side ('left' or 'right')
+    - `limit`: Maximum number of results (default: 50)
+
+    **Returns:** List of stencils with metadata (no full polygon data)
+    """
+    try:
+        import stencil_storage
+
+        storage = stencil_storage.StencilStorage()
+
+        # Get stencils
+        stencils = storage.list_stencils(side=side, limit=limit)
+
+        # Convert to API format
+        stencil_items = [
+            api_models.StencilListItem(
+                stencil_id=s['id'],  # Storage layer uses 'id', API uses 'stencil_id'
+                side=s['side'],
+                name=s.get('name'),
+                tags=s.get('tags', []),
+                created_at=s['created_at'],
+                num_points=s['num_points'],
+                bbox=s.get('bbox', [0, 0, 0, 0])
+            )
+            for s in stencils
+        ]
+
+        return api_models.StencilListResponse(
+            success=True,
+            message=f"Found {len(stencil_items)} stencils",
+            stencils=stencil_items,
+            total_count=len(stencil_items),  # TODO: Get actual total from storage
+            filtered_count=len(stencil_items)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list stencils: {str(e)}"
+        )
+
+
+@app.get("/stencils/{stencil_id}", response_model=api_models.StencilGetResponse, tags=["Stencil Library"])
+async def get_stencil(stencil_id: str):
+    """
+    Get full stencil data by ID.
+
+    **Returns:** Complete stencil polygon with all metadata and optional original photo.
+
+    **Use case:** Load stencil for re-editing or export.
+    """
+    try:
+        import stencil_storage
+
+        storage = stencil_storage.StencilStorage()
+
+        # Get stencil
+        stencil_data = storage.get_stencil(stencil_id)
+
+        if not stencil_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stencil not found: {stencil_id}"
+            )
+
+        # Convert to API format (simplified - full conversion would need more fields)
+        # Storage uses 'id' and 'polygon.points', API uses 'stencil_id' and 'polygon'
+        stencil_polygon = api_models.StencilPolygon(
+            stencil_id=stencil_data['id'],
+            side=stencil_data['side'],
+            polygon=stencil_data['polygon']['points'],
+            num_points=stencil_data['polygon']['num_points'],
+            source=stencil_data['polygon'].get('source', 'user_edited'),
+            bbox=stencil_data.get('metadata', {}).get('bbox', [0, 0, 0, 0]),
+            alignment=api_models.PolygonAlignment(
+                aligned=True,
+                iou=1.0,
+                avg_distance=0.0,
+                mp_inside_count=0,
+                mp_inside_ratio=1.0,
+                all_mp_inside=True,
+                buffer_distance=0.0,
+                mp_inside_with_buffer_count=0,
+                mp_inside_with_buffer_ratio=1.0,
+                all_mp_inside_with_buffer=True
+            ),
+            validation=api_models.PolygonValidation(valid=True, checks={}),
+            metadata=api_models.StencilMetadata(
+                yolo_vertices=0,
+                mp_landmarks=0,
+                final_vertices=stencil_data['polygon']['num_points'],
+                yolo_confidence=0.0,
+                source=stencil_data['polygon'].get('source', 'user_edited'),
+                merged=False
+            ),
+            created_at=stencil_data.get('metadata', {}).get('created_at', ''),
+            image_shape=None
+        )
+
+        return api_models.StencilGetResponse(
+            success=True,
+            message="Stencil retrieved successfully",
+            stencil=stencil_polygon,
+            image_base64=stencil_data.get('image_base64')
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get stencil: {str(e)}"
+        )
+
+
+@app.delete("/stencils/{stencil_id}", response_model=api_models.StencilDeleteResponse, tags=["Stencil Library"])
+async def delete_stencil(stencil_id: str):
+    """
+    Delete stencil from library.
+
+    **WARNING:** This action is permanent! Deletes both JSON file and any exported files.
+    """
+    try:
+        import stencil_storage
+
+        storage = stencil_storage.StencilStorage()
+
+        # Delete stencil
+        success = storage.delete_stencil(stencil_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stencil not found: {stencil_id}"
+            )
+
+        return api_models.StencilDeleteResponse(
+            success=True,
+            message="Stencil deleted successfully",
+            stencil_id=stencil_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete stencil: {str(e)}"
+        )
+
+
+@app.get("/stencils/{stencil_id}/export", response_model=api_models.StencilExportResponse, tags=["Stencil Library"])
+async def export_stencil(
+    stencil_id: str,
+    format: str = "svg"
+):
+    """
+    Export stencil as SVG, JSON, or PNG.
+
+    **Query params:**
+    - `format`: Export format ('svg', 'json', 'png')
+
+    **SVG:** For laser cutting / physical stencils
+    **JSON:** For data interchange
+    **PNG:** For visual preview
+
+    **Returns:** File path and optional download content
+    """
+    try:
+        import stencil_storage
+
+        storage = stencil_storage.StencilStorage()
+
+        # Export stencil (storage methods return content directly, not file paths)
+        if format == "svg":
+            content = storage.export_svg(stencil_id)
+            file_path = f"stencil_data/exports/stencil_{stencil_id[:8]}.svg"
+        elif format == "json":
+            import json
+            json_data = storage.export_json(stencil_id)
+            if json_data:
+                content = json.dumps(json_data, indent=2)
+            else:
+                content = None
+            file_path = f"stencil_data/exports/stencil_{stencil_id[:8]}.json"
+        elif format == "png":
+            # TODO: Implement PNG export
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="PNG export not yet implemented"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid format: {format}. Must be 'svg', 'json', or 'png'"
+            )
+
+        if content is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Stencil not found: {stencil_id}"
+            )
+
+        return api_models.StencilExportResponse(
+            success=True,
+            message=f"Stencil exported as {format.upper()}",
+            format=format,
+            file_path=file_path,
+            download_url=None,  # Could add CDN URL here
+            content=content
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export stencil: {str(e)}"
+        )
 
 
 # =============================================================================

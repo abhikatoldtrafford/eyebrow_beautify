@@ -1,0 +1,118 @@
+{
+  "stencils": [
+    {
+      "id": "7c531d13-fd42-43de-aa57-b58be202b011",
+      "side": "right",
+      "created_at": "2025-11-13T09:16:09.113399",
+      "num_points": 16,
+      "tags": [],
+      "file_path": "stencil_data/stencil_7c531d13.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "5c3e9a2c-ab43-4c0b-9eae-360de2efa259",
+      "side": "right",
+      "created_at": "2025-11-13T09:16:41.800047",
+      "num_points": 16,
+      "tags": [],
+      "file_path": "stencil_data/stencil_5c3e9a2c.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "921b83ab-5e66-42e9-be9b-94b9b4426a0f",
+      "side": "right",
+      "created_at": "2025-11-13T09:17:18.740961",
+      "num_points": 16,
+      "tags": [],
+      "file_path": "stencil_data/stencil_921b83ab.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "b9096527-d4ce-4472-8189-b88da1c27645",
+      "side": "right",
+      "created_at": "2025-11-13T09:18:22.294626",
+      "num_points": 16,
+      "tags": [],
+      "file_path": "stencil_data/stencil_b9096527.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "dff0bcbd-bdc0-4d61-b72b-0c58e103f01d",
+      "side": "right",
+      "created_at": "2025-11-13T09:19:28.834087",
+      "num_points": 16,
+      "tags": [],
+      "file_path": "stencil_data/stencil_dff0bcbd.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "1e075073-16d3-44eb-8c15-25eb3ebebea7",
+      "side": "left",
+      "created_at": "2025-11-13T10:39:52.761380",
+      "num_points": 15,
+      "tags": [
+        "auto-generated"
+      ],
+      "file_path": "stencil_data/stencil_1e075073.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "afe8e655-a6b9-4889-b3d6-0df99c4af47d",
+      "side": "left",
+      "created_at": "2025-11-13T10:44:47.192958",
+      "num_points": 15,
+      "tags": [
+        "auto-generated"
+      ],
+      "file_path": "stencil_data/stencil_afe8e655.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "7fb3d993-945d-44e4-a4d5-695f7c00bbb4",
+      "side": "left",
+      "created_at": "2025-11-13T10:45:53.113279",
+      "num_points": 2,
+      "tags": [
+        "test"
+      ],
+      "file_path": "stencil_data/stencil_7fb3d993.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "00424006-9a67-4652-a173-aa835cf60760",
+      "side": "left",
+      "created_at": "2025-11-13T10:49:30.560316",
+      "num_points": 21,
+      "tags": [
+        "auto-generated"
+      ],
+      "file_path": "stencil_data/stencil_00424006.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "efe794ed-72f2-450f-9158-0ca31e860dd4",
+      "side": "left",
+      "created_at": "2025-11-13T10:52:28.079557",
+      "num_points": 21,
+      "tags": [
+        "auto-generated"
+      ],
+      "file_path": "stencil_data/stencil_efe794ed.json",
+      "source": "user_edited"
+    },
+    {
+      "id": "eb2d02a4-01b0-457e-a3ee-5c11e8dfa3f0",
+      "side": "right",
+      "created_at": "2025-11-13T10:52:28.095759",
+      "num_points": 15,
+      "tags": [
+        "auto-generated"
+      ],
+      "file_path": "stencil_data/stencil_eb2d02a4.json",
+      "source": "user_edited"
+    }
+  ],
+  "version": "6.0",
+  "created_at": "2025-11-13T09:14:32.822491",
+  "last_updated": "2025-11-13T10:52:28.099719"
+}

@@ -1,0 +1,86 @@
+.editor-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.editor-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.editor-header h2 {
+  font-size: 2rem;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.editor-header p {
+  color: #6b7280;
+  font-size: 1rem;
+}
+
+.editor-controls {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.editor-controls .spacer {
+  flex: 1;
+}
+
+.editor-canvas {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.editor-canvas canvas {
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  cursor: crosshair;
+}
+
+.editor-info {
+  margin-top: 1.5rem;
+}
+
+.editor-info h3 {
+  font-size: 1.25rem;
+  color: #1f2937;
+  margin-bottom: 1rem;
+}
+
+.editor-info ul {
+  list-style: none;
+  padding: 0;
+}
+
+.editor-info li {
+  padding: 0.5rem 0;
+  color: #4b5563;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.editor-info li:before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #667eea;
+  font-weight: bold;
+  font-size: 1.5rem;
+  line-height: 1rem;
+}
+
+.editor-info strong {
+  color: #1f2937;
+}

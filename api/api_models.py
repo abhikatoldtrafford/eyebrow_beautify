@@ -419,3 +419,140 @@ class PreprocessResponse(BaseModel):
     report: str = Field(..., description="Human-readable preprocessing report")
 
     model_config = ConfigDict(protected_namespaces=())
+
+# =============================================================================
+# STENCIL EXTRACTION MODELS (v6.0)
+# =============================================================================
+
+class PolygonAlignment(BaseModel):
+    """Alignment metrics between YOLO and MediaPipe."""
+
+    aligned: bool = Field(..., description="Sources are well-aligned")
+    iou: float = Field(..., description="Intersection over Union (0-1)")
+    avg_distance: float = Field(..., description="Average distance from MP points to YOLO (pixels)")
+    mp_inside_count: int = Field(..., description="Number of MP points inside YOLO polygon")
+    mp_inside_ratio: float = Field(..., description="Ratio of MP points inside YOLO (0-1)")
+    all_mp_inside: bool = Field(..., description="All MP points inside YOLO (strict)")
+    buffer_distance: float = Field(..., description="10% buffer distance (pixels)")
+    mp_inside_with_buffer_count: int = Field(..., description="MP points inside YOLO (with 10% buffer)")
+    mp_inside_with_buffer_ratio: float = Field(..., description="Ratio with 10% buffer (0-1)")
+    all_mp_inside_with_buffer: bool = Field(..., description="All MP points inside with buffer")
+
+
+class PolygonValidation(BaseModel):
+    """Polygon validation results."""
+
+    valid: bool = Field(..., description="Polygon is valid")
+    checks: Dict[str, bool] = Field(..., description="Individual validation checks")
+
+
+class StencilMetadata(BaseModel):
+    """Metadata for stencil extraction."""
+
+    yolo_vertices: int = Field(..., description="Number of YOLO polygon vertices")
+    mp_landmarks: int = Field(..., description="Number of MediaPipe landmarks")
+    final_vertices: int = Field(..., description="Number of final polygon vertices")
+    yolo_confidence: float = Field(..., description="YOLO detection confidence")
+    source: str = Field(..., description="Polygon source: 'yolo_only', 'merged', 'mediapipe_only'")
+    merged: bool = Field(..., description="Whether YOLO and MP were merged")
+
+
+class StencilPolygon(BaseModel):
+    """Complete stencil polygon with metadata."""
+
+    stencil_id: Optional[str] = Field(None, description="Unique stencil ID (UUID)")
+    side: str = Field(..., description="Eyebrow side: 'left' or 'right'")
+    polygon: List[List[int]] = Field(..., description="Polygon vertices [[x, y], ...]")
+    num_points: int = Field(..., description="Number of polygon points")
+    source: str = Field(..., description="Polygon source: 'yolo_only', 'merged', 'mediapipe_only'")
+    bbox: List[int] = Field(..., description="Bounding box [x1, y1, x2, y2]")
+    alignment: PolygonAlignment = Field(..., description="Alignment metrics")
+    validation: PolygonValidation = Field(..., description="Validation results")
+    metadata: StencilMetadata = Field(..., description="Extraction metadata")
+    created_at: Optional[str] = Field(None, description="Creation timestamp (ISO 8601)")
+    image_shape: Optional[Tuple[int, int]] = Field(None, description="Original image shape (height, width)")
+
+
+class StencilExtractionResponse(BaseModel):
+    """Response from /beautify/base64 endpoint (v6.0 stencil mode)."""
+
+    success: bool = Field(..., description="Extraction succeeded")
+    message: str = Field(..., description="Status message")
+    stencils: List[StencilPolygon] = Field(..., description="Extracted stencil polygons")
+    processing_time_ms: float = Field(..., description="Processing time (milliseconds)")
+    image_shape: Tuple[int, int] = Field(..., description="Image shape (height, width)")
+    preprocessing: Optional[PreprocessingSummary] = Field(None, description="Preprocessing summary (if enabled)")
+
+
+# =============================================================================
+# STENCIL LIBRARY MODELS
+# =============================================================================
+
+class StencilSaveRequest(BaseModel):
+    """Request to save edited stencil to library."""
+
+    polygon: List[List[int]] = Field(..., description="Edited polygon vertices [[x, y], ...]")
+    side: str = Field(..., description="Eyebrow side: 'left' or 'right'")
+    name: Optional[str] = Field(None, description="Custom name for stencil")
+    tags: List[str] = Field(default_factory=list, description="Tags for categorization")
+    notes: Optional[str] = Field(None, description="User notes")
+    image_base64: Optional[str] = Field(None, description="Original photo (optional, for reference)")
+
+
+class StencilSaveResponse(BaseModel):
+    """Response after saving stencil."""
+
+    success: bool = Field(..., description="Save succeeded")
+    message: str = Field(..., description="Status message")
+    stencil_id: str = Field(..., description="Generated stencil ID (UUID)")
+    file_path: str = Field(..., description="Storage file path")
+
+
+class StencilListItem(BaseModel):
+    """Stencil item in library list."""
+
+    stencil_id: str = Field(..., description="Stencil ID")
+    side: str = Field(..., description="Eyebrow side")
+    name: Optional[str] = Field(None, description="Custom name")
+    tags: List[str] = Field(default_factory=list, description="Tags")
+    created_at: str = Field(..., description="Creation timestamp")
+    num_points: int = Field(..., description="Number of polygon points")
+    bbox: List[int] = Field(..., description="Bounding box [x1, y1, x2, y2]")
+
+
+class StencilListResponse(BaseModel):
+    """Response from /stencils/list endpoint."""
+
+    success: bool = Field(..., description="List succeeded")
+    message: str = Field(..., description="Status message")
+    stencils: List[StencilListItem] = Field(..., description="List of stencils")
+    total_count: int = Field(..., description="Total number of stencils")
+    filtered_count: int = Field(..., description="Number after filtering")
+
+
+class StencilGetResponse(BaseModel):
+    """Response from /stencils/{id} GET endpoint."""
+
+    success: bool = Field(..., description="Get succeeded")
+    message: str = Field(..., description="Status message")
+    stencil: StencilPolygon = Field(..., description="Full stencil data")
+    image_base64: Optional[str] = Field(None, description="Original photo (if stored)")
+
+
+class StencilDeleteResponse(BaseModel):
+    """Response from /stencils/{id} DELETE endpoint."""
+
+    success: bool = Field(..., description="Delete succeeded")
+    message: str = Field(..., description="Status message")
+    stencil_id: str = Field(..., description="Deleted stencil ID")
+
+
+class StencilExportResponse(BaseModel):
+    """Response from /stencils/{id}/export endpoint."""
+
+    success: bool = Field(..., description="Export succeeded")
+    message: str = Field(..., description="Status message")
+    format: str = Field(..., description="Export format: 'svg', 'json', 'png'")
+    file_path: str = Field(..., description="Exported file path")
+    download_url: Optional[str] = Field(None, description="Download URL (if applicable)")
+    content: Optional[str] = Field(None, description="File content (for direct download)")

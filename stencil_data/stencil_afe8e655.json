@@ -1,0 +1,81 @@
+{
+  "id": "afe8e655-a6b9-4889-b3d6-0df99c4af47d",
+  "side": "left",
+  "polygon": {
+    "points": [
+      [
+        113,
+        707
+      ],
+      [
+        113,
+        736
+      ],
+      [
+        124,
+        736
+      ],
+      [
+        143,
+        721
+      ],
+      [
+        182,
+        718
+      ],
+      [
+        229,
+        736
+      ],
+      [
+        276,
+        741
+      ],
+      [
+        355,
+        762
+      ],
+      [
+        387,
+        757
+      ],
+      [
+        387,
+        720
+      ],
+      [
+        342,
+        701
+      ],
+      [
+        340,
+        691
+      ],
+      [
+        129,
+        691
+      ],
+      [
+        128,
+        702
+      ],
+      [
+        113,
+        707
+      ]
+    ],
+    "num_points": 15,
+    "source": "user_edited"
+  },
+  "metadata": {
+    "side": "left",
+    "name": "Left Brow 11/13/2025",
+    "tags": [
+      "auto-generated"
+    ],
+    "notes": "Created with Brow Stencil App",
+    "created_at": "2025-11-13T10:44:47.192958",
+    "source_image_hash": "d8fd83cd690647eb4a7bbcb3cc8a7cf078e8c473091d85ee2730be3c1a70545b"
+  },
+  "version": "6.0"
+}

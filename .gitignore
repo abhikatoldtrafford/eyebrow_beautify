@@ -7,8 +7,9 @@ eyebrow_training/eyebrow_recommended/*
 eyebrow_training/eyebrow_recommended/weights/*
 !eyebrow_training/eyebrow_recommended/weights/best.pt
 
-# Exclude large training data
+# Exclude large training data and zip files
 eyebrow.v2i.yolov11.zip
+*.zip
 
 # Exclude other model formats
 *.pth
